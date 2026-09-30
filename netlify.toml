@@ -1,0 +1,10 @@
+# Déploiement statique : aucune compilation ni dépendance à installer.
+[build]
+  publish = "."
+  command = ""
+
+# Le jeu principal reste accessible même si l'URL est saisie directement.
+[[redirects]]
+  from = "/jeu"
+  to = "/shootemup.html"
+  status = 200
