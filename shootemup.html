@@ -907,7 +907,7 @@ function importProfile(file){
   reader.onerror=()=>{$('saveStatus').textContent='Lecture du fichier impossible.';};reader.readAsText(file);
 }
 
-/* ============================ ENTRÉES ============================ 
+/* ============================ ENTRÉES ============================ */
 const keys={};
 addEventListener('keydown',e=>{
   keys[e.code]=true; Audio_.init();
