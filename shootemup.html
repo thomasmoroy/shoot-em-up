@@ -61,6 +61,12 @@
   kbd{background:#1b1f3b;border:1px solid #3a4180;border-radius:5px;padding:1px 6px;font-size:12px;color:#dfe4ff}
   .opts{margin-top:14px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:#9aa2d0}
   .opts label{cursor:pointer;display:flex;gap:8px;align-items:center;justify-content:center}
+  .saveRow{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:13px;max-width:420px}
+  .saveRow button,.fileButton{margin:0;padding:8px 13px;font-size:11px;letter-spacing:.6px;border-radius:18px;
+    background:linear-gradient(90deg,#25396f,#5a4387);color:#eef4ff;cursor:pointer;font-weight:bold}
+  .fileButton input{display:none}
+  #saveStatus{min-height:17px;margin:5px 0 0;color:#8ef6a0;font-size:11px;line-height:1.25}
+  #continueBtn{background:linear-gradient(90deg,#8ef6a0,#7bdff2);color:#07152a}
   .hidden{display:none!important}
   #toast{position:absolute;top:34%;left:0;right:0;text-align:center;font-size:calc(24px * var(--s));font-weight:bold;
     color:#ffd166;text-shadow:0 0 20px #ff6b00;pointer-events:none;opacity:0;letter-spacing:3px}
@@ -147,7 +153,13 @@
       <label>Niveau <select id="optDifficulty"><option value="cadet">Cadet · découverte</option><option value="normal">Pilote · équilibré</option><option value="veteran">Vétéran · exigeant</option></select></label>
       <label>Volume <input type="range" id="optVol" min="0" max="100" value="72"></label>
     </div>
-    <button id="startBtn">JOUER</button>
+    <button id="startBtn">NOUVELLE CAMPAGNE</button>
+    <button id="continueBtn" class="hidden">REPRENDRE LA CAMPAGNE</button>
+    <div class="saveRow" aria-label="Sauvegarde portable">
+      <button id="exportBtn" type="button">↓ SAUVEGARDER LE PROFIL</button>
+      <label class="fileButton">↑ RESTAURER<input id="importSave" type="file" accept="application/json,.json"></label>
+    </div>
+    <p id="saveStatus">Astuce : place le fichier de sauvegarde dans Google Drive, iCloud ou Dropbox.</p>
   </div>
 
   <div class="overlay hidden" id="pauseScr">
@@ -401,22 +413,27 @@ let focus,focusT;
 /* Stockage tolérant aux pannes : dans une iframe sandboxée (origine opaque),
    le seul fait de LIRE localStorage lève une SecurityError et tuait le script. */
 const Store={
-  get(k,d){ try{ const v=localStorage.getItem(k); return v===null?d:v; }catch(e){ return d; } },
-  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  get(k,d){try{const v=localStorage.getItem(k);return v===null?d:v;}catch(e){return d;}},
+  set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
+  del(k){try{localStorage.removeItem(k);}catch(e){}}
 };
 // Le mode fluide peut être choisi manuellement ou activé après plusieurs images lentes.
 function lowFx(){return reduceFx||fluidMode||autoLite;}
-best=+(Store.get('cosmochat_best',0))||0;
-reduceFx=Store.get('cosmochat_fx','0')==='1';
-Audio_.muted=Store.get('cosmochat_mute','0')==='1';
-Audio_.setVolume((+Store.get('cosmochat_volume','72')||72)/100);
-fluidMode=Store.get('cosmochat_fluid','0')==='1';
-difficulty=['cadet','normal','veteran'].includes(Store.get('cosmochat_difficulty','normal'))?Store.get('cosmochat_difficulty','normal'):'normal';
-$('optDifficulty').value=$('optDifficulty2').value=difficulty;
-$('optFlash').checked=$('optFlash2').checked=reduceFx;
-$('optMute').checked=$('optMute2').checked=Audio_.muted;
-$('optFluid').checked=$('optFluid2').checked=fluidMode;
-$('optVol').value=$('optVol2').value=Math.round(Audio_.volume*100);
+function applyStoredSettings(){
+  best=+(Store.get('cosmochat_best',0))||0;
+  reduceFx=Store.get('cosmochat_fx','0')==='1';
+  Audio_.muted=Store.get('cosmochat_mute','0')==='1';
+  Audio_.setVolume((+Store.get('cosmochat_volume','72')||72)/100);
+  fluidMode=Store.get('cosmochat_fluid','0')==='1';
+  const saved=Store.get('cosmochat_difficulty','normal');
+  difficulty=['cadet','normal','veteran'].includes(saved)?saved:'normal';
+  $('optDifficulty').value=$('optDifficulty2').value=difficulty;
+  $('optFlash').checked=$('optFlash2').checked=reduceFx;
+  $('optMute').checked=$('optMute2').checked=Audio_.muted;
+  $('optFluid').checked=$('optFluid2').checked=fluidMode;
+  $('optVol').value=$('optVol2').value=Math.round(Audio_.volume*100);
+}
+applyStoredSettings();
 
 let muzzle=[], lights=[];           // éclairs de bouche et bloom dynamique
 function flare(px,py,col,r,life=.14){
@@ -615,11 +632,13 @@ function bossDefeated(){
   P.shield=1;                             // le relais allié recharge la défense entre deux niveaux
   const isFinal=waveIdx===CAMPAIGN.length*BOSS_EVERY-1;
   if(isFinal){
+    clearCheckpoint();
     // La séquence finale est sûre : aucune salve résiduelle ne peut voler la victoire.
     campaignWon=true;victoryT=3.2;intermission=999;ebul.length=0;P.inv=4.2;
     toast('AUBE RALLUMÉE · MISSION ACCOMPLIE');
     transmission('NOVA // COMMANDEMENT','Nexus Noctis est détruit. La constellation de l’Aube est libre. Pacha, tu as accompli la mission.',5.8);
   } else {
+    checkpoint();
     intermission=2.3;
     toast('SECTEUR SÉCURISÉ · BOUCLIER RECHARGÉ'+(upgraded?' · AMPLI +1':''));
     transmission('NOVA // COMMANDEMENT',z.victory+(upgraded?' Amplificateur de Pacha calibré.':'')+' Bouclier énergétique restauré.',4.6);
@@ -832,7 +851,63 @@ function reset(){
   toast('VAGUE 1');
 }
 
-/* ============================ ENTRÉES ============================ */
+/* ======================== PROFIL & SAUVEGARDE PORTABLE ========================
+   Sans compte ni serveur : le JSON peut être placé dans n'importe quel cloud personnel.
+   Il contient les réglages, le record et le dernier checkpoint de secteur. */
+const PROFILE_KEYS=['cosmochat_best','cosmochat_fx','cosmochat_mute','cosmochat_fluid','cosmochat_volume','cosmochat_difficulty','cosmochat_checkpoint'];
+function checkpoint(){
+  const next=waveIdx+1;
+  if(next>=CAMPAIGN.length*BOSS_EVERY)return;
+  // Reprise au début du secteur suivant : aucun ennemi ni projectile ne peut être perdu/corrompu.
+  const data={v:1,wave:next,score:score+500+waveIdx*100,lives,bombs,weapon:P.w,level:P.lv,focus,at:Date.now()};
+  Store.set('cosmochat_checkpoint',JSON.stringify(data));refreshContinueButton();
+}
+function getCheckpoint(){
+  try{
+    const c=JSON.parse(Store.get('cosmochat_checkpoint','null'));
+    if(!c||c.v!==1||!Number.isInteger(c.wave)||c.wave<1||c.wave>=CAMPAIGN.length*BOSS_EVERY)return null;
+    return c;
+  }catch(e){return null;}
+}
+function clearCheckpoint(){Store.del('cosmochat_checkpoint');refreshContinueButton();}
+function refreshContinueButton(){
+  const b=$('continueBtn'),c=getCheckpoint();
+  b.classList.toggle('hidden',!c);
+  if(c)b.textContent='REPRENDRE · '+chapterAt(c.wave).sector;
+}
+function beginCheckpoint(){
+  const c=getCheckpoint();if(!c){start();return;}
+  reset();waveIdx=c.wave;waveT=0;phaseQ=makeWave(waveIdx);
+  score=Math.max(0,+c.score||0);lives=clamp(+c.lives||3,1,3);bombs=clamp(+c.bombs||2,0,3);
+  P.w=clamp(+c.weapon||0,0,WEAPONS.length-1);P.lv=clamp(+c.level||0,0,MODULES.length-1);
+  P.shield=1;P.inv=1.4;focus=clamp(+c.focus||0,0,100);state='play';changeSector(waveIdx,true);
+  $('menu').classList.add('hidden');$('over').classList.add('hidden');$('victory').classList.add('hidden');$('pauseScr').classList.add('hidden');
+  toast('CHECKPOINT RESTAURÉ · '+chapterAt(waveIdx).sector);last=performance.now();
+}
+function profilePayload(){
+  const profile={};PROFILE_KEYS.forEach(k=>{const v=Store.get(k,null);if(v!==null)profile[k]=v;});
+  return {app:'COSMO_CHAT',version:1,savedAt:new Date().toISOString(),profile};
+}
+function exportProfile(){
+  try{
+    const blob=new Blob([JSON.stringify(profilePayload(),null,2)],{type:'application/json'}),a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download='cosmo-chat-sauvegarde.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);
+    $('saveStatus').textContent='Sauvegarde téléchargée. Place-la dans Google Drive, iCloud ou Dropbox.';
+  }catch(e){$('saveStatus').textContent='Impossible de créer le fichier de sauvegarde sur cet appareil.';}
+}
+function importProfile(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{try{
+    const data=JSON.parse(reader.result);
+    if(!data||data.app!=='COSMO_CHAT'||!data.profile||typeof data.profile!=='object')throw Error('format');
+    PROFILE_KEYS.forEach(k=>{if(typeof data.profile[k]==='string')Store.set(k,data.profile[k]);});
+    applyStoredSettings();refreshContinueButton();$('saveStatus').textContent='Sauvegarde restaurée. Tu peux reprendre la campagne.';
+  }catch(e){$('saveStatus').textContent='Ce fichier n’est pas une sauvegarde Cosmo Chat valide.';}};
+  reader.onerror=()=>{$('saveStatus').textContent='Lecture du fichier impossible.';};reader.readAsText(file);
+}
+
+/* ============================ ENTRÉES ============================ 
 const keys={};
 addEventListener('keydown',e=>{
   keys[e.code]=true; Audio_.init();
@@ -916,8 +991,11 @@ c.addEventListener('pointercancel',e=>{
 });
 c.addEventListener('contextmenu',e=>e.preventDefault());
 
-$('startBtn').onclick=()=>{Audio_.init();start();};
-$('againBtn').onclick=()=>{Audio_.init();start();};
+$('startBtn').onclick=()=>{Audio_.init();clearCheckpoint();start();};
+$('continueBtn').onclick=()=>{Audio_.init();beginCheckpoint();};
+$('exportBtn').onclick=exportProfile;
+$('importSave').onchange=e=>{importProfile(e.target.files&&e.target.files[0]);e.target.value='';};
+$('againBtn').onclick=()=>{Audio_.init();clearCheckpoint();start();};
 $('victoryAgainBtn').onclick=()=>{Audio_.init();start();};
 $('eliteBtn').onclick=()=>{Audio_.init();startElite();};
 $('resumeBtn').onclick=resume;
@@ -935,7 +1013,7 @@ bindRange('optVol','optVol2','cosmochat_volume',v=>Audio_.setVolume(v/100));
 function start(){reset();state='play';changeSector(0,true);$('menu').classList.add('hidden');
   $('over').classList.add('hidden');$('victory').classList.add('hidden');$('pauseScr').classList.add('hidden');last=performance.now();}
 function startElite(){
-  reset();
+  clearCheckpoint();reset();
   // Après la victoire, le mode Élite reprend dans la Citadelle avec un appareil déjà équipé.
   eliteRun=true;waveIdx=CAMPAIGN.length*BOSS_EVERY;waveT=0;phaseQ=makeWave(waveIdx);
   P.lv=2;P.shield=1;state='play';changeSector(waveIdx,true);
@@ -2222,7 +2300,7 @@ function loop(now){
   }
   if(state!=='menu'){ render(); hud(); }
 }
-reset(); requestAnimationFrame(loop);
+reset();refreshContinueButton();requestAnimationFrame(loop);
 </script>
 </body>
 </html>
