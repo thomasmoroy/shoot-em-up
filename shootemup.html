@@ -45,9 +45,13 @@
   @keyframes focusPulse{to{filter:brightness(1.8);box-shadow:0 0 15px #fff3bb}}
   #best{color:#7a82b8;font-size:calc(12px * var(--s))}
 
+  /* Icône SVG inline : le cadre flex centre le dessin au pixel près, sans dépendre
+     d'un glyphe texte ni de calculs left/transform sensibles aux arrondis. */
   #pauseBtn{position:absolute;top:calc(8px * var(--s));left:50%;transform:translateX(-50%);
     width:calc(38px * var(--s));height:calc(38px * var(--s));border-radius:50%;border:1px solid #3a4180;background:rgba(20,24,50,.7);
-    color:#cfd6ff;font-size:15px;cursor:pointer;pointer-events:auto;z-index:5}
+    color:#cfd6ff;cursor:pointer;pointer-events:auto;z-index:5;padding:0;margin:0;
+    display:flex;align-items:center;justify-content:center;line-height:0}
+  #pauseBtn svg{width:calc(15px * var(--s));height:calc(15px * var(--s));display:block;flex:none}
 
   .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
     justify-content:center;background:rgba(3,4,12,.88);text-align:center;padding:24px;z-index:10;
@@ -121,7 +125,7 @@
       <div id="focus" title="Charge d'Aube — F quand la jauge est pleine"><span id="focusLabel">✦ AUBE 0%</span><div id="focusTrack"><div id="focusFill"></div></div></div>
     </div>
   </div>
-  <button id="pauseBtn">❚❚</button>
+  <button id="pauseBtn" aria-label="Pause"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3.4" height="12" rx="1"/><rect x="9.6" y="2" width="3.4" height="12" rx="1"/></svg></button>
   <div id="toast"></div>
   <div id="chapterCard" aria-live="polite">
     <div id="chapterKicker">SECTEUR 01 · TRANSMISSION REÇUE</div><span id="chapterTitle">NÉBULEUSE D'AZUR</span>
@@ -265,7 +269,8 @@ const SFX_SAMPLES={
 };
 
 const Audio_={
-  ctx:null,master:null,muted:false,volume:.72,buffers:{},samplesLoading:false,
+  ctx:null,master:null,sfxBus:null,musicBus:null,verbSend:null,verbWet:null,
+  muted:false,volume:.72,buffers:{},samplesLoading:false,
   loadSamples(){
     if(!this.ctx||this.samplesLoading)return;
     this.samplesLoading=true;
@@ -281,6 +286,8 @@ const Audio_={
     if(!this.ctx||this.muted||!this.buffers[name])return false;
     try{const src=this.ctx.createBufferSource();src.buffer=this.buffers[name];src.playbackRate.value=rate;this.route(src,vol,pan);src.start();return true;}catch(e){return false;}
   },
+  // Réveil des échantillons décodés : premier son jouable dès le chargement.
+  onSamplesReady(fn){this.onReady=fn;if(this.samplesLoading===false&&Object.keys(this.buffers).length&&fn)fn();},
   sampleAny(names,vol=.25,rate=1,pan=0){
     const ready=names.filter(name=>this.buffers[name]);
     return ready.length?this.sample(ready[Math.floor(Math.random()*ready.length)],vol,rate,pan):false;
@@ -294,7 +301,31 @@ const Audio_={
       this.master=this.ctx.createGain();this.master.gain.value=.62*this.volume;
       const comp=this.ctx.createDynamicsCompressor();
       comp.threshold.value=-18;comp.knee.value=16;comp.ratio.value=8;comp.attack.value=.004;comp.release.value=.16;
-      this.master.connect(comp);comp.connect(this.ctx.destination);this.wake();this.loadSamples();
+      // Chaîne de mastering : bus SFX + réverbération à convolution synthétisée
+      // (une petite salle métallique donne de la profondeur aux explosions),
+      // bus musique séparé, puis un limiteur multibande évite toute saturation.
+      this.sfxBus=this.ctx.createGain();this.sfxBus.gain.value=1;
+      this.musicBus=this.ctx.createGain();this.musicBus.gain.value=.9;
+      const makeIR=(dur,decay,hpLP)=>{
+        const n=Math.max(1,Math.floor(this.ctx.sampleRate*dur));
+        const b=this.ctx.createBuffer(2,n,this.ctx.sampleRate);
+        for(let chn=0;chn<2;chn++){const d=b.getChannelData(chn);let lp=0;
+          for(let i=0;i<n;i++){const w=Math.random()*2-1;
+            lp=lp*.78+w*.22;d[i]=lp*Math.pow(1-i/n,decay)*(1-i/n*.3);}}
+        return b;};
+      try{
+        this.verb=this.ctx.createConvolver();this.verb.buffer=makeIR(1.15,2.6);
+        const vp=this.ctx.createBiquadFilter();vp.type='lowpass';vp.frequency.value=3400;
+        this.verbSend=this.ctx.createGain();this.verbSend.gain.value=.5;
+        this.verbWet=this.ctx.createGain();this.verbWet.gain.value=.34;
+        this.verbSend.connect(this.verb);this.verb.connect(vp);vp.connect(this.verbWet);
+        this.verbWet.connect(comp);
+      }catch(e){this.verb=null;}
+      this.sfxBus.connect(comp);this.musicBus.connect(comp);
+      const lim=this.ctx.createDynamicsCompressor();
+      lim.threshold.value=-9;lim.knee.value=8;lim.ratio.value=14;lim.attack.value=.002;lim.release.value=.12;
+      comp.connect(lim);lim.connect(this.ctx.destination);
+      this.wake();this.loadSamples();Music_.start(this.ctx,this.musicBus);
     }catch(e){this.ctx=null;}
   },
   wake(){if(this.ctx&&this.ctx.state==='suspended')this.ctx.resume();},
@@ -302,8 +333,14 @@ const Audio_={
   route(node,gain,pan=0){
     if(!this.master)return;
     const g=this.ctx.createGain();g.gain.value=gain;
-    if(this.ctx.createStereoPanner){const p=this.ctx.createStereoPanner();p.pan.value=pan;node.connect(g);g.connect(p);p.connect(this.master);}
-    else {node.connect(g);g.connect(this.master);} return g;
+    let out=g;
+    if(this.ctx.createStereoPanner){const p=this.ctx.createStereoPanner();p.pan.value=pan;node.connect(g);g.connect(p);out=p;}
+    else {node.connect(g);}
+    out.connect(this.sfxBus||this.master);
+    // Une fraction du signal part dans la réverbération : les explosions
+    // gagnent de l'ampleur sans que les petits sons deviennent boueux.
+    if(this.verbSend)out.connect(this.verbSend);
+    return g;
   },
   tone(f,f2,dur,type,vol,delay=0,filter=0,pan=0){
     if(!this.ctx||this.muted)return;
@@ -391,11 +428,14 @@ const Audio_={
     this.tone(final?410:680,final?42:155,final?.72:.30,'sawtooth',final?.12:.075,0,540);
     this.tone(1250,760,.15,'square',.026,.015,3600);
   },
-  pow(){this.tone(420,880,.17,'triangle',.045,0,2000);this.tone(660,1320,.24,'sine',.032,.05);},
+  pow(){this.tone(420,880,.17,'triangle',.045,0,2000);this.tone(660,1320,.24,'sine',.032,.05);this.tone(1320,1760,.20,'sine',.018,.09,4200);},
   shield(){this.sampleAny(['shield1','shield2'],.34,.90+Math.random()*.14);this.tone(980,310,.20,'sine',.033,0,2400);this.noise(.12,.028,3600,0,1);},
-  bomb(){this.noise(1.18,.40,3000);this.tone(75,22,1.05,'sine',.23,0,150);this.noise(.32,.09,6200,0,1);},
-  swap(){this.tone(520,1180,.09,'square',.035,0,3200);},
-  combo(n){this.tone(480+Math.min(n,20)*45,0,.07,'triangle',.032);},
+  bomb(){this.noise(1.18,.40,3000);this.tone(75,22,1.05,'sine',.23,0,150);this.noise(.32,.09,6200,0,1);
+    this.tone(48,12,1.3,'sine',.16,.02,120);},
+  swap(){this.tone(520,1180,.09,'square',.035,0,3200);this.tone(1180,700,.07,'sine',.014,.05,4000);},
+  combo(n){const k=Math.min(n,20),f=523.25*Math.pow(2,(Math.min(10,k)-10)/12); // gamme pentatonique ascendante
+    this.tone(f,f*1.5,.09,'triangle',.028+k*.001,0,4200);
+    if(k%10===0&&k>0)this.tone(f*2,f*3,.14,'sine',.02,.03,5200);},
   warp(){this.sampleAny(['engine1','engine2'],.26,.65+Math.random()*.08);this.noise(1.45,.055,1300);this.tone(95,1320,1.34,'sawtooth',.040,0,2400);},
   arrival(){this.tone(1180,210,.24,'sine',.05,0,1800);this.noise(.16,.045,3000,0,1);},
   radio(){ // court « bip » de liaison : trois notes montantes, très discret.
@@ -404,6 +444,119 @@ const Audio_={
   },
   // Alias de compatibilité pour les appels moins fréquents du jeu.
   hit(){this.enemyHit();},boomS(){this.enemyExplosion();},boomB(){this.bossBoom();},die(){this.playerHit(true);}
+};
+
+/* ============================ MUSIQUE DE COMBAT (séquenceuse WebAudio) ============================ */
+/* Bande-son originale synthétisée : basse, batterie et arpèges par secteur.
+   Un léger désaccord d'oscillateurs et une enveloppe par note remplacent
+   l'effet « bleep » des vieux synthés 8-bit. Aucune dépendance externe. */
+const Music_={
+  ctx:null,bus:null,on:false,step:0,nextT:0,timer:null,bpm:132,mode:'calm',intensity:0,
+  SECTORS:[
+    {root:55, prog:[0,-4,-7,-5], arpDiv:2, drive:.9},   // Azur : mineur planant
+    {root:49, prog:[0,-2,-7,-9], arpDiv:3, drive:1},    // Helix : sombre
+    {root:58, prog:[0,-5,-3,-7], arpDiv:2, drive:.95},  // Ion : nerveux
+    {root:46, prog:[0,-7,-5,-2], arpDiv:4, drive:1.1},  // Éclipse : menaçant
+    {root:52, prog:[0,-3,-8,-6], arpDiv:3, drive:1.05}  // Noctis : épique
+  ],
+  PENTA:[0,3,5,7,10,12,15,17],
+  start(ctx,bus){ if(this.on)return; this.ctx=ctx; this.bus=bus; this.on=true;
+    this.nextT=ctx.currentTime+.08;
+    this.timer=setInterval(()=>this.schedule(),60);
+  },
+  stop(){ if(this.timer)clearInterval(this.timer); this.timer=null; this.on=false; },
+  setMode(m){this.mode=m;},
+  setIntensity(v){this.intensity=clamp(v,0,1);},
+  freq(semi){return 440*Math.pow(2,(semi-69)/12);},
+  schedule(){
+    if(!this.ctx||Audio_.muted){this.nextT=Math.max(this.nextT,this.ctx?this.ctx.currentTime:0);return;}
+    const spb=60/this.bpm/4;                       // durée d'un seizeuvième
+    while(this.nextT<this.ctx.currentTime+.24){
+      this.playStep(this.step,this.nextT,spb);
+      this.step=(this.step+1)%64;
+      this.nextT+=spb;
+    }
+  },
+  env(t,dur,peak,atk=.006){                        // petite enveloppe commune
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.exponentialRampToValueAtTime(Math.max(.0002,peak),t+atk);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    return g;
+  },
+  osc(type,freq,detune,t,dur,peak,filterCut,pan=0,connectTo){
+    const o=this.ctx.createOscillator(),g=this.env(t,dur,peak);
+    o.type=type;o.frequency.value=freq;if(detune)o.detune.value=detune;
+    let node=o;
+    if(filterCut){const f=this.ctx.createBiquadFilter();f.type='lowpass';
+      f.frequency.setValueAtTime(filterCut*1.9,t);
+      f.frequency.exponentialRampToValueAtTime(Math.max(60,filterCut*.55),t+dur);
+      f.Q.value=.9;o.connect(f);node=f;}
+    node.connect(g);
+    if(this.ctx.createStereoPanner&&pan){const p=this.ctx.createStereoPanner();p.pan.value=pan;g.connect(p);p.connect(connectTo||this.bus);}
+    else g.connect(connectTo||this.bus);
+    o.start(t);o.stop(t+dur+.03);
+  },
+  drum(t,kind,vol=1,pan=0){
+    const out=this.bus;
+    if(kind==='kick'){
+      const o=this.ctx.createOscillator(),g=this.env(t,.22,.5*vol,.004);
+      o.type='sine';o.frequency.setValueAtTime(150,t);
+      o.frequency.exponentialRampToValueAtTime(38,t+.13);
+      o.connect(g);g.connect(out);o.start(t);o.stop(t+.26);
+      Audio_.noise(.03,.10*vol,3000,pan,1);          // clic d'attaque
+    } else if(kind==='snare'){
+      Audio_.noise(.16,.20*vol,2600,pan);
+      this.osc('triangle',190,0,t,.09,.10*vol,1400,pan);
+    } else if(kind==='hat'){
+      Audio_.noise(.035,.07*vol,8500,pan,1);
+    } else if(kind==='open'){
+      Audio_.noise(.14,.08*vol,7200,pan,1);
+    }
+  },
+  playStep(s,t,spb){
+    const sec=this.SECTORS[(typeof sceneTheme!=='undefined'?sceneTheme:0)%this.SECTORS.length];
+    const bar=Math.floor(s/16)%4, beat=s%16, I=this.intensity;
+    const rootMidi=sec.root+sec.prog[bar];           // grille du secteur (note tenue à l'octave basse)
+    const calm=this.mode==='calm';
+    const bassVol=calm?.10:.15+I*.09;
+    // Basse : pulsation croisée octave/tonique, plus dense en mode combat.
+    if(calm){ if(beat===0||beat===8)this.osc('triangle',this.freq(rootMidi),-6,t,.5,.12,300,0); }
+    else{
+      const patt=[0,3,6,8,10,13,14];                 // seizeuvièmes joués
+      if(patt.includes(beat)||(!calm&&I>.55&&beat%2===0)){
+        const oct=(beat%4===0)?0:12;
+        this.osc('sawtooth',this.freq(rootMidi+oct),-8,t,spb*1.7,bassVol,240+I*300,rnd(-.2,.2));
+        if(I>.4)this.osc('square',this.freq(rootMidi+oct-12),6,t,spb*1.4,bassVol*.4,180,0);
+      }
+    }
+    // Batterie
+    if(!calm){
+      if(beat%4===0)this.drum(t,'kick',1);
+      if(beat===4||beat===12)this.drum(t,'snare',.9+I*.3);
+      if(I>.25&&(beat%2===1))this.drum(t,'hat',.8);
+      if(I>.6&&beat===14)this.drum(t,'open',.9);
+      if(I>.8&&beat===7)this.drum(t,'hat',1,.3);
+    } else if(beat===0||beat===8)this.drum(t,'hat',.35);
+    // Arpèges : quinte + tierce mineure, en mode "delay" stéréo.
+    const chordNotes=[rootMidi+12,rootMidi+15,rootMidi+19,rootMidi+24];
+    const div=sec.arpDiv;
+    if(!calm&&I>.2&&beat%(div)===0){
+      const idx=(Math.floor(s/div)+bar)%this.PENTA.length;
+      const n=chordNotes[(Math.floor(s/div))%4]+ (idx%2?this.PENTA[idx]-7:0);
+      this.osc('square',this.freq(n),4,t,.16,.05+I*.045,2600,-.5);
+      this.osc('sawtooth',this.freq(n+12),-4,t+spb*div,.14,.028+I*.03,3200,.5);
+    }
+    // Nappes planantes au menu / accalmie : accord tenu très doux.
+    if(calm&&(beat===0||beat===8)){
+      [0,7,15].forEach(iv=>this.osc('sine',this.freq(rootMidi+12+iv),rnd(-4,4),t,1.1,.035,900,rnd(-.6,.6)));
+    }
+    // Stinger boss : pédale dramatique toutes les deux mesures.
+    if(this.mode==='boss'&&(beat===0)&&bar%2===0){
+      this.osc('sawtooth',this.freq(rootMidi),0,t,spb*14,.10,140,-.7);
+      this.osc('sawtooth',this.freq(rootMidi),7,t,spb*14,.10,140,.7);
+    }
+  }
 };
 
 /* ============================ ÉTAT ============================ */
