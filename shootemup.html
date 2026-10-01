@@ -193,7 +193,11 @@
 <script>
 /* ============================ SETUP CANVAS (responsive + DPR) ============================ */
 const VW=480, VH=720;                 // monde logique
-const c=document.getElementById('c'), x=c.getContext('2d');
+const c=document.getElementById('c'), x=c.getContext('2d',{alpha:false});
+if(!x){ // navigateur sans canvas 2D : message lisible plutôt qu'une page noire
+  document.body.innerHTML='<div style="display:grid;place-items:center;height:100%;font:16px system-ui;color:#e6e9ff;text-align:center;padding:24px">Ce navigateur ne prend pas en charge le canvas HTML5.<br>Essaie une version récente de Chrome, Firefox, Safari ou Edge.</div>';
+  throw new Error('canvas 2d indisponible');
+}
 const stage=document.getElementById('stage'), $=id=>document.getElementById(id);
 let scale=1;
 function viewportSize(){
@@ -229,6 +233,8 @@ addEventListener('resize',resize);
 addEventListener('orientationchange',()=>setTimeout(resize,150));
 if(window.visualViewport)visualViewport.addEventListener('resize',resize);
 addEventListener('load',resize);
+// Les navigateurs suspendent l'AudioContext des pages en arrière-plan : on le réveille dès le retour.
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)Audio_.wake();});
 if(window.ResizeObserver)new ResizeObserver(resize).observe(document.documentElement);
 // l'iframe peut n'avoir sa taille définitive qu'après quelques frames
 [0,60,200,600,1200].forEach(d=>setTimeout(resize,d));
@@ -392,6 +398,10 @@ const Audio_={
   combo(n){this.tone(480+Math.min(n,20)*45,0,.07,'triangle',.032);},
   warp(){this.sampleAny(['engine1','engine2'],.26,.65+Math.random()*.08);this.noise(1.45,.055,1300);this.tone(95,1320,1.34,'sawtooth',.040,0,2400);},
   arrival(){this.tone(1180,210,.24,'sine',.05,0,1800);this.noise(.16,.045,3000,0,1);},
+  radio(){ // court « bip » de liaison : trois notes montantes, très discret.
+    if(!this.gate('radio',.4))return;
+    this.tone(700,0,.05,'square',.014,0,2600);this.tone(980,0,.05,'square',.012,.06,2600);this.tone(1260,0,.07,'sine',.012,.12,3000);
+  },
   // Alias de compatibilité pour les appels moins fréquents du jeu.
   hit(){this.enemyHit();},boomS(){this.enemyExplosion();},boomB(){this.bossBoom();},die(){this.playerHit(true);}
 };
@@ -565,6 +575,7 @@ function chapterAt(w){
 }
 function transmission(who,msg,duration=4.2){
   commsWho=who;commsMsg=msg;commsMax=commsT=duration;
+  Audio_.radio();                                   // petit « bip » de liaison
 }
 const MAP_POINTS=['COULOIR AURORA','BRUME DE LUMEN','CHAMP D’ÉPAVES','ORBITALE DE COMBAT','NŒUD D’ASSAUT'];
 function mapNameAt(w){
@@ -828,7 +839,7 @@ function spawnWreck(f){
 }
 
 function reset(){
-  P={x:VW/2,y:VH-100,r:13,hit:3,sp:330,slow:.42,w:0,lv:0,shield:1,upFx:0,inv:1.4,cdT:0,tilt:0,trail:[]};
+  P={x:VW/2,y:VH-100,r:13,hit:3,sp:330,slow:.42,w:0,lv:0,shield:1,upFx:0,focusFx:0,inv:1.4,cdT:0,tilt:0,trail:[]};
   bul=[];ebul=[];foes=[];parts=[];pups=[];gems=[];muzzle=[];lights=[];wrecks=[];warpLines=makeWarpLines();
   eliteRun=false;sceneTheme=0;commsT=0;commsMax=1;commsWho='';commsMsg='';intermission=0;chapterT=0;chapterMax=1;warpT=0;warpMax=1;pendingWave=-1;campaignWon=false;victoryT=0;
   stars=[...Array(220)].map(()=>{const L=Math.random();
@@ -963,8 +974,10 @@ c.addEventListener('pointermove',e=>{
 c.addEventListener('pointerenter',e=>{
   if(e.pointerType!=='touch')mouse=tp(e);
 });
+// Sortie du canvas : le tir se relâche, mais le cap est conservé (le vaisseau
+// reste de toute façon clampé dans l'arène) — plus de blocage silencieux.
 c.addEventListener('pointerleave',e=>{
-  if(e.pointerType!=='touch'){mouse=null;mouseFire=false;}
+  if(e.pointerType!=='touch')mouseFire=false;
 });
 c.addEventListener('pointerdown',e=>{
   if(state!=='play')return;
@@ -991,6 +1004,9 @@ c.addEventListener('pointercancel',e=>{
 });
 c.addEventListener('contextmenu',e=>e.preventDefault());
 
+// Fenêtre qui perd le focus : on relâche les entrées et on met en pause,
+// pour ne jamais laisser le combat tourner sans le joueur.
+addEventListener('blur',()=>{mouseFire=false;touchFire=false;if(state==='play')pause();});
 $('startBtn').onclick=()=>{Audio_.init();clearCheckpoint();start();};
 $('continueBtn').onclick=()=>{Audio_.init();beginCheckpoint();};
 $('exportBtn').onclick=exportProfile;
@@ -1035,7 +1051,7 @@ function destroyEnemy(f){
 }
 function useFocus(){
   if(state!=='play'||focus<100||pendingWave>=0)return;
-  focus=0;focusT=4.6;ebul.length=0;P.inv=Math.max(P.inv,.32);
+  focus=0;focusT=4.6;ebul.length=0;P.inv=Math.max(P.inv,.32);P.focusFx=.55;   // alerte visuelle à l'activation
   Audio_.pow();shakeAdd(9);flashA=Math.max(flashA,.28);boom(P.x,P.y,'#fff0a8',44,245);
   toast('SURCHARGE AUBE · FEU ACCÉLÉRÉ');
   transmission('NOVA // SYSTÈMES','Noyau de l’Aube synchronisé. Les projectiles hostiles sont ralentis.',3.4);
@@ -1152,6 +1168,7 @@ function update(dt){
   } else { P.tilt*=Math.max(0,1-dt*8); }
   if(P.inv>0)P.inv-=dt;
   if(P.upFx>0)P.upFx-=dt;
+  if(P.focusFx>0)P.focusFx-=dt;
   P.trail.unshift({x:P.x,y:P.y}); if(P.trail.length>10)P.trail.pop();
 
   /* ---- tir ---- */
@@ -1379,9 +1396,11 @@ function showVictory(){
 }
 function gameOver(){
   state='over';
+  const recordRun=score>best&&best>0;
   if(score>best){best=score;Store.set('cosmochat_best',best);}
   const z=chapterAt(waveIdx);
-  $('overText').innerHTML=`Score : <b style="color:#ffd166">${score}</b> — Vague ${waveIdx+1}<br>
+  $('overTitle').textContent=z.index>=CAMPAIGN.length-1?'DERNIER REMPART · COQUE PERDUE':'CHASSEUR DÉTRUIT';
+  $('overText').innerHTML=`Score : <b style="color:#ffd166">${score}</b> — Vague ${waveIdx+1}${recordRun?' · <b style="color:#8ef6a0">NOUVEAU RECORD</b>':''}<br>
     Secteur atteint : <b style="color:#8ef6ff">${z.sector}</b><br>${missionReport()}<br>Record : ${best}`;
   $('over').classList.remove('hidden');
 }
@@ -1703,11 +1722,6 @@ function drawFoe(f){
     [-.60,-.20,.20,.60].forEach(ex=>{x.fillStyle='#87eaff';x.beginPath();x.arc(ex*r,-r*.16,1.65,0,7);x.fill();});
     enemyCanopy(r,'#4bb6e9');
     [-.64,0,.64].forEach(ex=>enemyGun(ex*r,r*.39,0,r*.58,r*.15,hot));
-    // jauge de blindage propre à la frégate
-    const bw=r*2.28,bx=-bw/2,by=-r*1.30,hr=clamp(f.hp/Math.max(1,f.hpMax),0,1);
-    x.fillStyle='rgba(0,5,14,.72)';x.fillRect(bx,by,bw,4.4);
-    x.fillStyle='#ffd166';x.fillRect(bx,by,bw*hr,4.4);
-    x.strokeStyle='rgba(255,255,255,.38)';x.lineWidth=.7;x.strokeRect(bx,by,bw,4.4);
   } else if(f.type==='dart'){
     /* Chasseur-lance : silhouette de flèche, nez énergétique et ailerons. */
     x.fillStyle=metal(-r*.72,0,r*.72,0,'#ffe1ee',mid,dark);
@@ -1730,6 +1744,15 @@ function drawFoe(f){
     x.fillStyle='#caff9c';x.beginPath();x.arc(0,-r*.12,r*.095,0,7);x.fill();
     [-.72,.72].forEach(ex=>{x.fillStyle='#172f28';x.fillRect(ex*r-r*.11,r*.17,r*.22,r*.42);enemyGun(ex*r,r*.28,0,r*.33,r*.09,hot);});
     if(hot)glow(0,r*.45,r,'rgba(180,255,120,.72)');
+  }
+
+  // Jauge de blindage : sur tous les ennemis costaux, dès qu'un coup porte.
+  // La couleur bascule jaune > orange > rouge : la phase du combat se lit d'un regard.
+  if(f.hpMax>=5&&f.hp<f.hpMax){
+    const bw=r*2.28,bx=-bw/2,by=-r*1.30,hr=clamp(f.hp/Math.max(1,f.hpMax),0,1);
+    x.fillStyle='rgba(0,5,14,.72)';x.fillRect(bx,by,bw,4.4);
+    x.fillStyle=hr>.55?'#ffd166':hr>.28?'#ff9e54':'#ff4d6d';x.fillRect(bx,by,bw*hr,4.4);
+    x.strokeStyle='rgba(255,255,255,.38)';x.lineWidth=.7;x.strokeRect(bx,by,bw,4.4);
   }
 
   // Insigne de vague : deux modèles d'un même châssis ne se confondent plus.
@@ -2040,7 +2063,7 @@ function drawComet(cm){
   x.restore();
 }
 function drawAimReticle(){
-  if(!mouse||state!=='play')return;
+  if(!mouse||state!=='play'||touch)return;   // le doigt pilote déjà le vaisseau : pas de réticule
   const px=clamp(mouse.x,12,VW-12),py=clamp(mouse.y,12,VH-12);
   x.save();x.globalCompositeOperation='lighter';
   const pulse=.55+Math.sin(gameT*8)*.2;
@@ -2100,6 +2123,8 @@ function drawWarp(){
 function render(){
   x.save();
   if(shake>0){const sh=shake; x.translate(rnd(-sh,sh)*.5,rnd(-sh,sh)*.5);}
+  // Le contexte est opaque : on peint un fond plein avant tout décalage de secousse.
+  x.fillStyle='#03040c';x.fillRect(-40,-40,VW+80,VH+80);
 
   // Chaque secteur possède sa palette lumineuse et donc sa propre ambiance.
   const zone=chapterAt(waveIdx);
@@ -2154,8 +2179,15 @@ function render(){
       x[i?'lineTo':'moveTo'](Math.cos(a)*p.r,Math.sin(a)*p.r);}
     x.closePath();x.fill();
     x.strokeStyle='rgba(255,255,255,.8)';x.lineWidth=1.2;x.stroke();
-    x.fillStyle='#04240f';x.font='bold 12px sans-serif';x.textAlign='center';
-    x.fillText(p.k==='pow'?'P':'B',0,4.2);x.restore();});
+    // Lettre dessinée en vecteur : reste nette quelle que soit l'échelle d'affichage.
+    const glyph=p.k==='pow'
+      ? [[-3,-6],[3,-6],[3,-1],[-3,-1],[-3,6]]                                  // P
+      : [[-3,-6],[3,-6],[-3,0],[3,0],[-3,6],[3,6]];                             // B
+    x.strokeStyle='#04240f';x.lineWidth=2.6;x.lineJoin=x.lineCap='round';
+    x.beginPath();glyph.forEach((q,i)=>x[i?'lineTo':'moveTo'](q[0],q[1]));x.stroke();
+    x.strokeStyle='rgba(255,255,255,.85)';x.lineWidth=1.1;
+    x.beginPath();glyph.forEach((q,i)=>x[i?'lineTo':'moveTo'](q[0],q[1]));x.stroke();
+    x.restore();});
 
   wrecks.forEach(drawWreck);
   foes.forEach(f=>f.boss?drawBoss(f):drawFoe(f));
@@ -2198,6 +2230,14 @@ function render(){
     const wake=x.createRadialGradient(P.x,P.y+14,0,P.x,P.y+14,58);
     wake.addColorStop(0,'rgba(222,255,255,.72)');wake.addColorStop(.23,'rgba(87,219,255,.30)');wake.addColorStop(1,'rgba(70,72,255,0)');
     x.fillStyle=wake;x.beginPath();x.arc(P.x,P.y+14,58,0,7);x.fill();x.restore();
+  }
+  // Alerte d'activation : quelques dixièmes de seconde, lisible même en mode réduit.
+  if(P&&P.focusFx>0){
+    const k=clamp(P.focusFx/.55,0,1);
+    x.save();x.globalAlpha=k*(reduceFx?.5:.85);x.strokeStyle='#fff0a8';
+    x.lineWidth=3*k;x.beginPath();x.arc(px,py,26+(1-k)*46,0,7);x.stroke();
+    x.lineWidth=1.4;x.globalAlpha=k*.6;
+    x.beginPath();x.arc(px,py,34+(1-k)*62,0,7);x.stroke();x.restore();x.globalAlpha=1;
   }
   if(focusT>0){
     const fk=focusT/4.6,rr=34+Math.sin(gameT*16)*5;
@@ -2285,20 +2325,23 @@ function hud(){
 }
 
 /* ============================ BOUCLE (delta-time) ============================ */
-let last=performance.now();
+let last=performance.now(), frameCount=0;
 function loop(now){
   requestAnimationFrame(loop);
   const rawDt=(now-last)/1000; last=now;
   // Ajustement automatique sans toucher aux règles du jeu : seules les décorations baissent.
   if(rawDt>.028)frameDebt=Math.min(140,frameDebt+1); else frameDebt=Math.max(0,frameDebt-2);
   if(frameDebt>78)autoLite=true; else if(frameDebt<12)autoLite=false;
+  // En difficulté persistante de framerate, on ne dessine que 30 images/s maximum :
+  // la simulation garde sa cadence, seul le rendu s'allège (mouvement toujours fluide à 30 i/s).
+  const liteSkip=autoLite&&(frameCount++&1);
   let dt=Math.min(rawDt,1/30);               // garde-fou : jamais plus de 33 ms d'un coup
   if(state==='play'){
     // sous-pas fixes -> physique identique à 60 Hz, 120 Hz ou 144 Hz
     let acc=dt; const STEP=1/120;
     while(acc>0){ const s=Math.min(STEP,acc); update(s); acc-=s; if(state!=='play')break; }
   }
-  if(state!=='menu'){ render(); hud(); }
+  if(state!=='menu'&&!liteSkip){ render(); hud(); }
 }
 reset();refreshContinueButton();requestAnimationFrame(loop);
 </script>
