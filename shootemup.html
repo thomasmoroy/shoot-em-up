@@ -73,6 +73,15 @@
   .fileButton input{display:none}
   .fileButton:focus-within,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #8ef6ff;outline-offset:3px}
   #saveStatus{min-height:17px;margin:5px 0 0;color:#8ef6a0;font-size:11px;line-height:1.25}
+  #accountPanel{width:min(440px,94%);margin:12px auto 0;padding:10px 12px;background:linear-gradient(120deg,rgba(10,24,55,.8),rgba(32,13,54,.72));border:1px solid rgba(115,223,255,.32);border-radius:12px}
+  #accountTop{display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:wrap;color:#b8c8f5;font-size:12px}
+  #accountTop button{margin:0;padding:7px 12px;font-size:11px;letter-spacing:.4px;background:linear-gradient(90deg,#314d91,#6152a2);color:#fff}
+  #accountName{color:#8ef6a0;font-weight:bold}
+  #leaderboard{margin:8px auto 0;width:100%;border-collapse:collapse;font-size:10px;color:#dfe6ff}
+  #leaderboard th{color:#8ef6ff;font-weight:normal;letter-spacing:.7px;border-bottom:1px solid rgba(115,223,255,.25);padding:3px}
+  #leaderboard td{padding:3px 4px;border-bottom:1px solid rgba(130,150,230,.1)}
+  #leaderboard td:first-child{color:#ffd166;width:24px}#leaderboard td:last-child{text-align:right;color:#ffd58a}
+  #onlineStatus{min-height:14px;margin:5px 0 0;color:#96a8da;font-size:10px}
   #continueBtn{background:linear-gradient(90deg,#8ef6a0,#7bdff2);color:#07152a}
   .hidden{display:none!important}
   #toast{position:absolute;top:34%;left:0;right:0;text-align:center;font-size:calc(24px * var(--s));font-weight:bold;
@@ -170,6 +179,11 @@
       <label class="fileButton">↑ RESTAURER<input id="importSave" type="file" accept="application/json,.json"></label>
     </div>
     <p id="saveStatus">Astuce : place le fichier de sauvegarde dans Google Drive, iCloud ou Dropbox.</p>
+    <section id="accountPanel" aria-label="Compte et classement">
+      <div id="accountTop"><span id="accountName">Mode invité</span><button id="googleSignIn" type="button">SE CONNECTER AVEC GOOGLE</button><button id="googleSignOut" class="hidden" type="button">DÉCONNEXION</button></div>
+      <p id="onlineStatus" aria-live="polite">Chargement du classement…</p>
+      <table id="leaderboard" aria-label="Classement mondial"><thead><tr><th>#</th><th>PILOTE</th><th>PROGRESSION</th><th>SCORE</th></tr></thead><tbody id="leaderboardRows"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
+    </section>
   </div>
 
   <div class="overlay hidden" id="pauseScr">
@@ -440,6 +454,62 @@ const Store={
   set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
   del(k){try{localStorage.removeItem(k);}catch(e){}}
 };
+/* Compte et progression en ligne. La clé publishable reste publique ; RLS protège les lignes privées. */
+const Cloud={
+  client:null,user:null,ready:false,queue:Promise.resolve(),
+  status(message){$('onlineStatus').textContent=message;},
+  profileName(user){const m=user?.user_metadata||{};return String(m.full_name||m.name||user?.email?.split('@')[0]||'Pilote').slice(0,48);},
+  async init(){
+    $('googleSignIn').disabled=true;
+    try{
+      const config=await fetch('/api/game-config',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject());
+      if(!config.url||!config.key)throw new Error('Configuration indisponible');
+      await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});
+      this.client=window.supabase.createClient(config.url,config.key);
+      const {data}=await this.client.auth.getSession();
+      this.setUser(data.session?.user||null);
+      this.client.auth.onAuthStateChange((_event,session)=>{this.setUser(session?.user||null);if(session?.user)this.syncAccount();});
+      this.ready=true;$('googleSignIn').disabled=false;
+      this.status(this.user?'Compte synchronisé.':'Connecte-toi pour sauvegarder ta campagne.');
+      this.refreshBoard();if(this.user)await this.syncAccount();
+    }catch(e){this.status('Classement indisponible pour le moment.');$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
+  },
+  setUser(user){this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';$('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);},
+  async signIn(){if(!this.client)return;const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});if(error)this.status('Connexion Google impossible.');},
+  async signOut(){if(this.client)await this.client.auth.signOut();},
+  async refreshBoard(){
+    if(!this.client)return;
+    const {data,error}=await this.client.from('cosmo_player_stats').select('display_name,furthest_sector,furthest_wave,best_score').order('furthest_wave',{ascending:false}).order('best_score',{ascending:false}).limit(10);
+    const body=$('leaderboardRows');body.replaceChildren();
+    if(error||!data){body.innerHTML='<tr><td colspan="4">Classement momentanément indisponible.</td></tr>';return;}
+    if(!data.length){body.innerHTML='<tr><td colspan="4">Les pilotes apparaîtront ici.</td></tr>';return;}
+    data.forEach((row,i)=>{const tr=document.createElement('tr');[String(i+1),row.display_name||'Pilote',`Secteur ${String(row.furthest_sector).padStart(2,'0')} · vague ${row.furthest_wave}`,Number(row.best_score||0).toLocaleString('fr-FR')].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.appendChild(td);});body.appendChild(tr);});
+  },
+  async syncAccount(){
+    if(!this.client||!this.user)return;
+    const {data}=await this.client.from('cosmo_player_saves').select('save_data').eq('user_id',this.user.id).maybeSingle();
+    const remote=data?.save_data,local=getCheckpoint();
+    if(remote?.checkpoint&&(!local||remote.checkpoint.wave>local.wave)){Store.set('cosmochat_checkpoint',JSON.stringify(remote.checkpoint));refreshContinueButton();}
+    if(remote?.best_score){best=Math.max(best||0,+remote.best_score||0);Store.set('cosmochat_best',best);$('best').textContent='RECORD '+best;}
+    if(local)this.saveCheckpoint(local);
+    await this.recordProgress(waveIdx+1,score);
+    this.status('Progression synchronisée avec Google.');
+  },
+  async recordProgress(wave,points){
+    if(!this.client||!this.user)return;
+    const zone=chapterAt(Math.max(0,Math.min(CAMPAIGN.length*BOSS_EVERY-1,wave-1)));
+    const payload={user_id:this.user.id,display_name:this.profileName(this.user),furthest_sector:zone.index+1,furthest_wave:Math.max(1,wave),best_score:Math.max(best||0,points||0),updated_at:new Date().toISOString()};
+    const {error}=await this.client.from('cosmo_player_stats').upsert(payload,{onConflict:'user_id'});
+    if(!error)this.refreshBoard();
+  },
+  saveCheckpoint(checkpoint){
+    if(!this.client||!this.user)return;
+    const payload={user_id:this.user.id,save_data:{checkpoint,best_score:Math.max(best||0,checkpoint.score||0)},updated_at:new Date().toISOString()};
+    this.queue=this.queue.then(()=>this.client.from('cosmo_player_saves').upsert(payload,{onConflict:'user_id'})).then(({error})=>{if(error)this.status('Sauvegarde en ligne à réessayer.');else this.status('Campagne sauvegardée sur ton compte Google.');}).catch(()=>{});
+  }
+};
+$('googleSignIn').addEventListener('click',()=>Cloud.signIn());$('googleSignOut').addEventListener('click',()=>Cloud.signOut());
+Cloud.init();
 // Le mode fluide peut être choisi manuellement ou activé après plusieurs images lentes.
 function lowFx(){return reduceFx||fluidMode||autoLite;}
 function applyStoredSettings(){
@@ -650,6 +720,7 @@ function advanceWave(next,fromJump=false){
   const oldSector=chapterAt(waveIdx).index;
   if(waveIdx>0)score+=500+waveIdx*100;
   waveIdx=next;waveT=0;phaseQ=makeWave(waveIdx);
+  Cloud.recordProgress(waveIdx+1,score);
   const z=chapterAt(waveIdx), nu=UNLOCK.find(u=>u.w===waveIdx);
   if(z.index!==oldSector){
     // Cette branche ne se produit qu'après le boss : la nouvelle carte arrive
@@ -906,7 +977,7 @@ function checkpoint(){
   if(next>=CAMPAIGN.length*BOSS_EVERY)return;
   // Reprise au début du secteur suivant : aucun ennemi ni projectile ne peut être perdu/corrompu.
   const data={v:1,wave:next,score:score+500+waveIdx*100,lives,bombs,weapon:P.w,level:P.lv,focus,at:Date.now()};
-  Store.set('cosmochat_checkpoint',JSON.stringify(data));refreshContinueButton();
+  Store.set('cosmochat_checkpoint',JSON.stringify(data));refreshContinueButton();Cloud.saveCheckpoint(data);
 }
 function getCheckpoint(){
   try{
@@ -915,7 +986,7 @@ function getCheckpoint(){
     return c;
   }catch(e){return null;}
 }
-function clearCheckpoint(){Store.del('cosmochat_checkpoint');refreshContinueButton();}
+function clearCheckpoint(){Store.del('cosmochat_checkpoint');refreshContinueButton();if(Cloud.client&&Cloud.user)Cloud.client.from('cosmo_player_saves').delete().eq('user_id',Cloud.user.id);}
 function refreshContinueButton(){
   const b=$('continueBtn'),c=getCheckpoint();
   b.classList.toggle('hidden',!c);
@@ -1452,6 +1523,7 @@ function showVictory(){
   if(state!=='play')return;
   state='victory';
   if(score>best){best=score;Store.set('cosmochat_best',best);}
+  Cloud.recordProgress(waveIdx+1,score);
   $('victoryText').innerHTML=`Score final : <b style="color:#ffd166">${score}</b><br>${missionReport()}<br><br>
     La campagne est terminée. Le mode Élite reprend au Secteur infini avec Pacha niveau 3.`;
   $('victory').classList.remove('hidden');
@@ -1460,6 +1532,7 @@ function gameOver(){
   state='over';
   const recordRun=score>best&&best>0;
   if(score>best){best=score;Store.set('cosmochat_best',best);}
+  Cloud.recordProgress(waveIdx+1,score);
   const z=chapterAt(waveIdx);
   $('overTitle').textContent=z.index>=CAMPAIGN.length-1?'DERNIER REMPART · COQUE PERDUE':'CHASSEUR DÉTRUIT';
   $('overText').innerHTML=`Score : <b style="color:#ffd166">${score}</b> — Vague ${waveIdx+1}${recordRun?' · <b style="color:#8ef6a0">NOUVEAU RECORD</b>':''}<br>
