@@ -83,6 +83,9 @@
   #leaderboard td:first-child{color:#ffd166;width:24px}#leaderboard td:last-child{text-align:right;color:#ffd58a}
   #onlineStatus{min-height:14px;margin:5px 0 0;color:#96a8da;font-size:10px}
   #continueBtn{background:linear-gradient(90deg,#8ef6a0,#7bdff2);color:#07152a}
+  #loginGate{z-index:30;background:radial-gradient(circle at 50% 18%,rgba(29,74,145,.45),rgba(3,4,12,.96) 56%)}
+  #loginGate p{max-width:330px}
+  #loginGate button{margin-top:22px}
   .hidden{display:none!important}
   #toast{position:absolute;top:34%;left:0;right:0;text-align:center;font-size:calc(24px * var(--s));font-weight:bold;
     color:#ffd166;text-shadow:0 0 20px #ff6b00;pointer-events:none;opacity:0;letter-spacing:3px}
@@ -184,6 +187,13 @@
       <p id="onlineStatus" aria-live="polite">Chargement du classement…</p>
       <table id="leaderboard" aria-label="Classement mondial"><thead><tr><th>#</th><th>PILOTE</th><th>PROGRESSION</th><th>SCORE</th></tr></thead><tbody id="leaderboardRows"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
     </section>
+  </div>
+
+  <div class="overlay" id="loginGate" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <h1 id="loginTitle">COSMO CHAT</h1><h2>IDENTIFICATION DU PILOTE</h2>
+    <p>Connecte-toi avec Google pour lancer la campagne. Ton avancée et ton meilleur score seront liés à ton compte.</p>
+    <button id="gateGoogleSignIn" type="button">CONTINUER AVEC GOOGLE</button>
+    <p id="gateStatus" aria-live="polite">Connexion sécurisée requise.</p>
   </div>
 
   <div class="overlay hidden" id="pauseScr">
@@ -460,7 +470,7 @@ const Cloud={
   status(message){$('onlineStatus').textContent=message;},
   profileName(user){const m=user?.user_metadata||{};return String(m.full_name||m.name||user?.email?.split('@')[0]||'Pilote').slice(0,48);},
   async init(){
-    $('googleSignIn').disabled=true;
+    $('googleSignIn').disabled=true;$('gateGoogleSignIn').disabled=true;
     try{
       const config=await fetch('/api/game-config',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject());
       if(!config.url||!config.key)throw new Error('Configuration indisponible');
@@ -469,12 +479,17 @@ const Cloud={
       const {data}=await this.client.auth.getSession();
       this.setUser(data.session?.user||null);
       this.client.auth.onAuthStateChange((_event,session)=>{this.setUser(session?.user||null);if(session?.user)this.syncAccount();});
-      this.ready=true;$('googleSignIn').disabled=false;
+      this.ready=true;$('googleSignIn').disabled=false;$('gateGoogleSignIn').disabled=false;
       this.status(this.user?'Compte synchronisé.':'Connecte-toi pour sauvegarder ta campagne.');
       this.refreshBoard();if(this.user)await this.syncAccount();
-    }catch(e){this.status('Classement indisponible pour le moment.');$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
+    }catch(e){this.status('Classement indisponible pour le moment.');$('gateStatus').textContent='Connexion indisponible. Réessaie dans un instant.';$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
   },
-  setUser(user){this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';$('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);},
+  setUser(user){
+    this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';
+    $('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);
+    $('loginGate').classList.toggle('hidden',!!user);
+    if(user)$('gateStatus').textContent='Pilote identifié. Ouverture de la mission…';
+  },
   async signIn(){if(!this.client)return;const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});if(error)this.status('Connexion Google impossible.');},
   async signOut(){if(this.client)await this.client.auth.signOut();},
   async refreshBoard(){
@@ -511,7 +526,7 @@ const Cloud={
     this.queue=this.queue.then(()=>this.client.from('cosmo_player_saves').upsert(payload,{onConflict:'user_id'})).then(({error})=>{if(error)this.status('Sauvegarde en ligne à réessayer.');else this.status('Campagne sauvegardée sur ton compte Google.');}).catch(()=>{});
   }
 };
-$('googleSignIn').addEventListener('click',()=>Cloud.signIn());$('googleSignOut').addEventListener('click',()=>Cloud.signOut());
+$('googleSignIn').addEventListener('click',()=>Cloud.signIn());$('gateGoogleSignIn').addEventListener('click',()=>Cloud.signIn());$('googleSignOut').addEventListener('click',()=>Cloud.signOut());
 Cloud.init();
 // Le mode fluide peut être choisi manuellement ou activé après plusieurs images lentes.
 function lowFx(){return reduceFx||fluidMode||autoLite;}
