@@ -83,9 +83,6 @@
   #leaderboard td:first-child{color:#ffd166;width:24px}#leaderboard td:last-child{text-align:right;color:#ffd58a}
   #onlineStatus{min-height:14px;margin:5px 0 0;color:#96a8da;font-size:10px}
   #continueBtn{background:linear-gradient(90deg,#8ef6a0,#7bdff2);color:#07152a}
-  #loginGate{z-index:30;background:radial-gradient(circle at 50% 18%,rgba(29,74,145,.45),rgba(3,4,12,.96) 56%)}
-  #loginGate p{max-width:330px}
-  #loginGate button{margin-top:22px}
   .hidden{display:none!important}
   #toast{position:absolute;top:34%;left:0;right:0;text-align:center;font-size:calc(24px * var(--s));font-weight:bold;
     color:#ffd166;text-shadow:0 0 20px #ff6b00;pointer-events:none;opacity:0;letter-spacing:3px}
@@ -181,19 +178,12 @@
       <button id="exportBtn" type="button">↓ SAUVEGARDER LE PROFIL</button>
       <label class="fileButton">↑ RESTAURER<input id="importSave" type="file" accept="application/json,.json"></label>
     </div>
-    <p id="saveStatus">Astuce : place le fichier de sauvegarde dans Google Drive, iCloud ou Dropbox.</p>
+    <p id="saveStatus">Astuce : exporte ton profil pour le conserver ou le transférer.</p>
     <section id="accountPanel" aria-label="Compte et classement">
-      <div id="accountTop"><span id="accountName">Mode invité</span><button id="googleSignIn" type="button">SE CONNECTER AVEC GOOGLE</button><button id="googleSignOut" class="hidden" type="button">DÉCONNEXION</button></div>
+      <div id="accountTop"><span id="accountName">Classement public</span></div>
       <p id="onlineStatus" aria-live="polite">Chargement du classement…</p>
       <table id="leaderboard" aria-label="Classement mondial"><thead><tr><th>#</th><th>PILOTE</th><th>PROGRESSION</th><th>SCORE</th></tr></thead><tbody id="leaderboardRows"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
     </section>
-  </div>
-
-  <div class="overlay" id="loginGate" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-    <h1 id="loginTitle">COSMO CHAT</h1><h2>IDENTIFICATION DU PILOTE</h2>
-    <p>Connecte-toi avec Google pour lancer la campagne. Ton avancée et ton meilleur score seront liés à ton compte.</p>
-    <button id="gateGoogleSignIn" type="button">CONTINUER AVEC GOOGLE</button>
-    <p id="gateStatus" aria-live="polite">Connexion sécurisée requise.</p>
   </div>
 
   <div class="overlay hidden" id="pauseScr">
@@ -470,28 +460,16 @@ const Cloud={
   status(message){$('onlineStatus').textContent=message;},
   profileName(user){const m=user?.user_metadata||{};return String(m.full_name||m.name||user?.email?.split('@')[0]||'Pilote').slice(0,48);},
   async init(){
-    $('googleSignIn').disabled=true;$('gateGoogleSignIn').disabled=true;
     try{
       const config=await fetch('/api/game-config',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject());
       if(!config.url||!config.key)throw new Error('Configuration indisponible');
       await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});
       this.client=window.supabase.createClient(config.url,config.key);
-      const {data}=await this.client.auth.getSession();
-      this.setUser(data.session?.user||null);
-      this.client.auth.onAuthStateChange((_event,session)=>{this.setUser(session?.user||null);if(session?.user)this.syncAccount();});
-      this.ready=true;$('googleSignIn').disabled=false;$('gateGoogleSignIn').disabled=false;
-      this.status(this.user?'Compte synchronisé.':'Connecte-toi pour sauvegarder ta campagne.');
-      this.refreshBoard();if(this.user)await this.syncAccount();
-    }catch(e){this.status('Classement indisponible pour le moment.');$('gateStatus').textContent='Connexion indisponible. Réessaie dans un instant.';$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
+      this.ready=true;
+      this.status('Classement public disponible.');
+      this.refreshBoard();
+    }catch(e){this.status('Classement indisponible pour le moment.');$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
   },
-  setUser(user){
-    this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';
-    $('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);
-    $('loginGate').classList.toggle('hidden',!!user);
-    if(user)$('gateStatus').textContent='Pilote identifié. Ouverture de la mission…';
-  },
-  async signIn(){if(!this.client)return;const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});if(error)this.status('Connexion Google impossible.');},
-  async signOut(){if(this.client)await this.client.auth.signOut();},
   async refreshBoard(){
     if(!this.client)return;
     const {data,error}=await this.client.from('cosmo_player_stats').select('display_name,furthest_sector,furthest_wave,best_score').order('furthest_wave',{ascending:false}).order('best_score',{ascending:false}).limit(10);
@@ -511,7 +489,7 @@ const Cloud={
     best=Math.max(best||0,+statsResult.data?.best_score||0,+remote?.best_score||0);Store.set('cosmochat_best',best);$('best').textContent='RECORD '+best;
     if(local)this.saveCheckpoint(local);
     await this.recordProgress(waveIdx+1,score);
-    this.status('Progression synchronisée avec Google.');
+    this.status('Progression synchronisée en ligne.');
   },
   async recordProgress(wave,points){
     if(!this.client||!this.user)return;
@@ -523,10 +501,9 @@ const Cloud={
   saveCheckpoint(checkpoint){
     if(!this.client||!this.user)return;
     const payload={user_id:this.user.id,save_data:{checkpoint,best_score:Math.max(best||0,checkpoint.score||0)},updated_at:new Date().toISOString()};
-    this.queue=this.queue.then(()=>this.client.from('cosmo_player_saves').upsert(payload,{onConflict:'user_id'})).then(({error})=>{if(error)this.status('Sauvegarde en ligne à réessayer.');else this.status('Campagne sauvegardée sur ton compte Google.');}).catch(()=>{});
+    this.queue=this.queue.then(()=>this.client.from('cosmo_player_saves').upsert(payload,{onConflict:'user_id'})).then(({error})=>{if(error)this.status('Sauvegarde en ligne à réessayer.');else this.status('Campagne sauvegardée en ligne.');}).catch(()=>{});
   }
 };
-$('googleSignIn').addEventListener('click',()=>Cloud.signIn());$('gateGoogleSignIn').addEventListener('click',()=>Cloud.signIn());$('googleSignOut').addEventListener('click',()=>Cloud.signOut());
 Cloud.init();
 // Le mode fluide peut être choisi manuellement ou activé après plusieurs images lentes.
 function lowFx(){return reduceFx||fluidMode||autoLite;}
@@ -1027,7 +1004,7 @@ function exportProfile(){
   try{
     const blob=new Blob([JSON.stringify(profilePayload(),null,2)],{type:'application/json'}),a=document.createElement('a');
     a.href=URL.createObjectURL(blob);a.download='cosmo-chat-sauvegarde.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);
-    $('saveStatus').textContent='Sauvegarde téléchargée. Place-la dans Google Drive, iCloud ou Dropbox.';
+    $('saveStatus').textContent='Sauvegarde téléchargée. Conserve ce fichier pour la restaurer.';
   }catch(e){$('saveStatus').textContent='Impossible de créer le fichier de sauvegarde sur cet appareil.';}
 }
 function importProfile(file){

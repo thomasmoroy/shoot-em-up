@@ -25,4 +25,4 @@ Le menu du jeu contient :
 - **Restaurer** : recharge ce fichier sur tout appareil.
 - **Reprendre la campagne** : disponible automatiquement après chaque boss de secteur.
 
-Pour une sauvegarde « en ligne » très simple, placez le fichier JSON téléchargé dans Google Drive, iCloud Drive, Dropbox ou OneDrive. Il contient les réglages, record et dernier checkpoint de secteur ; aucun mot de passe ni service externe n’est nécessaire.
+Pour une sauvegarde « en ligne » très simple, placez le fichier JSON téléchargé dans votre espace de stockage habituel. Il contient les réglages, record et dernier checkpoint de secteur ; aucun compte ni mot de passe n’est nécessaire.
