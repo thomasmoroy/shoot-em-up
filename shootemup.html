@@ -487,10 +487,13 @@ const Cloud={
   },
   async syncAccount(){
     if(!this.client||!this.user)return;
-    const {data}=await this.client.from('cosmo_player_saves').select('save_data').eq('user_id',this.user.id).maybeSingle();
-    const remote=data?.save_data,local=getCheckpoint();
+    const [saveResult,statsResult]=await Promise.all([
+      this.client.from('cosmo_player_saves').select('save_data').eq('user_id',this.user.id).maybeSingle(),
+      this.client.from('cosmo_player_stats').select('best_score').eq('user_id',this.user.id).maybeSingle()
+    ]);
+    const remote=saveResult.data?.save_data,local=getCheckpoint();
     if(remote?.checkpoint&&(!local||remote.checkpoint.wave>local.wave)){Store.set('cosmochat_checkpoint',JSON.stringify(remote.checkpoint));refreshContinueButton();}
-    if(remote?.best_score){best=Math.max(best||0,+remote.best_score||0);Store.set('cosmochat_best',best);$('best').textContent='RECORD '+best;}
+    best=Math.max(best||0,+statsResult.data?.best_score||0,+remote?.best_score||0);Store.set('cosmochat_best',best);$('best').textContent='RECORD '+best;
     if(local)this.saveCheckpoint(local);
     await this.recordProgress(waveIdx+1,score);
     this.status('Progression synchronisée avec Google.');
