@@ -1,7 +1,16 @@
-# Déploiement statique : aucune compilation ni dépendance à installer.
+# Jeu statique et fonction de configuration publique pour la connexion Google.
 [build]
   publish = "."
   command = ""
+
+[functions]
+  directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/game-config"
+  to = "/.netlify/functions/game-config"
+  status = 200
+  force = true
 
 # Le jeu principal reste accessible même si l'URL est saisie directement.
 [[redirects]]

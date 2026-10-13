@@ -466,32 +466,86 @@ const Store={
 };
 /* Compte et progression en ligne. La clé publishable reste publique ; RLS protège les lignes privées. */
 const Cloud={
-  client:null,user:null,ready:false,queue:Promise.resolve(),
+  client:null,user:null,ready:false,initializing:false,signingIn:false,subscription:null,queue:Promise.resolve(),
   status(message){$('onlineStatus').textContent=message;},
+  authStatus(message){this.status(message);$('gateStatus').textContent=message;},
+  authButtons(disabled){$('googleSignIn').disabled=disabled;$('gateGoogleSignIn').disabled=disabled;},
   profileName(user){const m=user?.user_metadata||{};return String(m.full_name||m.name||user?.email?.split('@')[0]||'Pilote').slice(0,48);},
   async init(){
-    $('googleSignIn').disabled=true;$('gateGoogleSignIn').disabled=true;
+    if(this.initializing)return;
+    this.initializing=true;this.ready=false;this.authButtons(true);
+    this.authStatus('Préparation de la connexion Google…');
     try{
-      const config=await fetch('/api/game-config',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject());
-      if(!config.url||!config.key)throw new Error('Configuration indisponible');
-      await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});
-      this.client=window.supabase.createClient(config.url,config.key);
-      const {data}=await this.client.auth.getSession();
+      if(!this.client){
+        const response=await fetch('/api/game-config',{cache:'no-store',signal:AbortSignal.timeout(15000)});
+        if(!response.ok)throw new Error(response.status===503?'Connexion non configurée : les variables Supabase doivent être renseignées sur le serveur.':'Configuration de connexion inaccessible. Vérifie le déploiement de /api/game-config.');
+        let config;
+        try{config=await response.json();}catch(e){throw new Error('Configuration de connexion invalide. Vérifie le déploiement de /api/game-config.');}
+        if(!config.url||!config.key)throw new Error('Configuration Supabase incomplète.');
+        if(!window.supabase){
+          await new Promise((resolve,reject)=>{
+            const script=document.createElement('script');
+            const timer=setTimeout(()=>fail(),15000);
+            function fail(){clearTimeout(timer);script.remove();reject(new Error('Chargement du service de connexion impossible. Vérifie ta connexion réseau puis réessaie.'));}
+            script.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+            script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=fail;
+            document.head.appendChild(script);
+          });
+        }
+        this.client=window.supabase.createClient(config.url,config.key);
+      }
+      const {data,error}=await this.client.auth.getSession();
+      if(error)throw error;
       this.setUser(data.session?.user||null);
-      this.client.auth.onAuthStateChange((_event,session)=>{this.setUser(session?.user||null);if(session?.user)this.syncAccount();});
-      this.ready=true;$('googleSignIn').disabled=false;$('gateGoogleSignIn').disabled=false;
-      this.status(this.user?'Compte synchronisé.':'Connecte-toi pour sauvegarder ta campagne.');
-      this.refreshBoard();if(this.user)await this.syncAccount();
-    }catch(e){this.status('Classement indisponible pour le moment.');$('gateStatus').textContent='Connexion indisponible. Réessaie dans un instant.';$('leaderboardRows').innerHTML='<tr><td colspan="4">Réessaie plus tard.</td></tr>';}
+      if(!this.subscription){
+        const {data:listener}=this.client.auth.onAuthStateChange((_event,session)=>{
+          this.setUser(session?.user||null);
+          // Supabase holds its auth lock during this callback. Database calls must run later.
+          if(session?.user)setTimeout(()=>this.syncAccount().catch(()=>this.status('Compte connecté, mais synchronisation indisponible.')),0);
+        });
+        this.subscription=listener.subscription;
+      }
+      this.ready=true;
+      const params=new URLSearchParams(location.search),fragment=new URLSearchParams(location.hash.slice(1));
+      const oauthError=params.get('error_description')||fragment.get('error_description')||params.get('error')||fragment.get('error');
+      this.authStatus(oauthError?'Connexion Google refusée : '+oauthError:(this.user?'Compte connecté.':'Connecte-toi pour sauvegarder ta campagne.'));
+      if(oauthError){
+        ['error','error_code','error_description'].forEach(key=>params.delete(key));
+        const query=params.toString();history.replaceState(null,'',location.pathname+(query?'?'+query:'')+(fragment.has('error')?'':location.hash));
+      }
+      this.refreshBoard().catch(()=>this.status('Classement momentanément indisponible.'));
+      if(this.user)this.syncAccount().catch(()=>this.status('Compte connecté, mais synchronisation indisponible.'));
+    }catch(e){
+      this.authStatus(e.message||'Connexion indisponible. Réessaie dans un instant.');
+      $('leaderboardRows').innerHTML='<tr><td colspan="4">Classement indisponible.</td></tr>';
+    }finally{
+      this.initializing=false;this.authButtons(false);
+      $('googleSignIn').textContent=this.ready?'SE CONNECTER AVEC GOOGLE':'RÉESSAYER LA CONNEXION';
+      $('gateGoogleSignIn').textContent=this.ready?'CONTINUER AVEC GOOGLE':'RÉESSAYER LA CONNEXION';
+    }
   },
   setUser(user){
     this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';
     $('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);
     $('loginGate').classList.toggle('hidden',!!user);
-    if(user)$('gateStatus').textContent='Pilote identifié. Ouverture de la mission…';
+    $('gateStatus').textContent=user?'Pilote identifié. Ouverture de la mission…':'Connecte-toi pour lancer la campagne.';
   },
-  async signIn(){if(!this.client)return;const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});if(error)this.status('Connexion Google impossible.');},
-  async signOut(){if(this.client)await this.client.auth.signOut();},
+  async signIn(){
+    if(this.signingIn||this.initializing)return;
+    if(!this.ready)await this.init();
+    if(!this.ready)return;
+    this.signingIn=true;this.authButtons(true);this.authStatus('Redirection vers Google…');
+    try{
+      // Use a stable callback URL, also when the game was opened at /jeu.
+      const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/shootemup.html'}});
+      if(error)throw error;
+    }catch(e){this.authStatus('Connexion Google impossible : '+(e.message||'réessaie dans un instant.'));}
+    finally{this.signingIn=false;this.authButtons(false);}
+  },
+  async signOut(){
+    try{if(this.client){const {error}=await this.client.auth.signOut();if(error)throw error;}}
+    catch(e){this.authStatus('Déconnexion impossible. Réessaie.');}
+  },
   async refreshBoard(){
     if(!this.client)return;
     const {data,error}=await this.client.from('cosmo_player_stats').select('display_name,furthest_sector,furthest_wave,best_score').order('furthest_wave',{ascending:false}).order('best_score',{ascending:false}).limit(10);
