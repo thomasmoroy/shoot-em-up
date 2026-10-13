@@ -19,6 +19,9 @@ test('démarrage sur le menu, scores locaux et raccourcis clavier', { skip }, ()
   const html = fs.readFileSync(path.join(__dirname, '..', 'shootemup.html'), 'utf8');
   const errors = [];
   const gradient = { addColorStop() {} };
+  // Compteurs d'appels : servent à vérifier que le rendu ne recrée plus
+  // d'objets graphiques (dégradés) à chaque image.
+  const calls = { createLinearGradient: 0, createRadialGradient: 0, drawImage: 0 };
 
   // Canvas 2D sans implémentation : on ne teste pas le rendu, seulement le jeu.
   const context2d = new Proxy({}, {
@@ -27,6 +30,7 @@ test('démarrage sur le menu, scores locaux et raccourcis clavier', { skip }, ()
       if (prop === 'canvas') return { width: 480, height: 720 };
       if (prop === 'measureText') return () => ({ width: 12 });
       if (prop === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+      if (prop in calls) return () => { calls[prop]++; return prop.startsWith('create') ? gradient : undefined; };
       if (typeof prop === 'string' && prop.startsWith('create')) return () => gradient;
       return () => {};
     },
@@ -105,5 +109,71 @@ test('démarrage sur le menu, scores locaux et raccourcis clavier', { skip }, ()
     assert.deepEqual(errors, [], 'aucune erreur JavaScript pendant le test');
   } finally {
     window.close();   // libère la boucle d'animation, même si une assertion échoue
+  }
+});
+
+test('le rendu ne recrée plus de dégradés à chaque image', { skip }, () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'shootemup.html'), 'utf8');
+  const gradient = { addColorStop() {} };
+  const calls = { createLinearGradient: 0, createRadialGradient: 0, drawImage: 0 };
+  const ticks = { update: 0, render: 0 };
+  const context2d = new Proxy({}, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'canvas') return { width: 480, height: 720 };
+      if (prop === 'measureText') return () => ({ width: 12 });
+      if (prop === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+      if (prop in calls) return () => { calls[prop]++; return prop.startsWith('create') ? gradient : undefined; };
+      if (typeof prop === 'string' && prop.startsWith('create')) return () => gradient;
+      return () => {};
+    },
+    set(target, prop, value) { target[prop] = value; return true; }
+  });
+
+  const virtualConsole = new VirtualConsole();
+  const errors = [];
+  virtualConsole.on('jsdomError', e => errors.push(String(e.detail || e.message)));
+
+  const dom = new JSDOM(html, {
+    url: 'https://exemple.test/shootemup.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    virtualConsole,
+    beforeParse(window) {
+      window.HTMLCanvasElement.prototype.getContext = () => context2d;
+      window.AudioContext = undefined;
+      window.webkitAudioContext = undefined;
+    }
+  });
+
+  const { window } = dom;
+  try {
+    const run = frames => {
+      for (let i = 0; i < frames; i++) {
+        window.eval('update(1/60)');
+        window.eval('render()');
+        window.eval('hud()');
+        ticks.update++;
+      }
+    };
+    window.eval("document.getElementById('startBtn').click()");
+    run(180);                                   // échauffement : caches remplis
+    const before = { ...calls };
+    const cacheBefore = window.eval('GradientCache.size');
+    run(120);                                   // fenêtre mesurée
+
+    const created = (calls.createLinearGradient - before.createLinearGradient)
+      + (calls.createRadialGradient - before.createRadialGradient);
+    const cacheAfter = window.eval('GradientCache.size');
+
+    assert.ok(created <= 3,
+      `le rendu doit réutiliser ses dégradés : ${created} créés sur 120 images`);
+    assert.ok(cacheAfter - cacheBefore <= 3,
+      `le cache de dégradés doit rester stable : +${cacheAfter - cacheBefore} entrées`);
+    assert.ok(calls.drawImage - before.drawImage > 0,
+      'les halos doivent passer par des sprites pré-rendus');
+    assert.deepEqual(errors, [], 'aucune erreur pendant le rendu accéléré');
+  } finally {
+    window.close();
   }
 });
