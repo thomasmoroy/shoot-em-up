@@ -73,19 +73,20 @@
   .fileButton input{display:none}
   .fileButton:focus-within,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #8ef6ff;outline-offset:3px}
   #saveStatus{min-height:17px;margin:5px 0 0;color:#8ef6a0;font-size:11px;line-height:1.25}
-  #accountPanel{width:min(440px,94%);margin:12px auto 0;padding:10px 12px;background:linear-gradient(120deg,rgba(10,24,55,.8),rgba(32,13,54,.72));border:1px solid rgba(115,223,255,.32);border-radius:12px}
-  #accountTop{display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:wrap;color:#b8c8f5;font-size:12px}
-  #accountTop button{margin:0;padding:7px 12px;font-size:11px;letter-spacing:.4px;background:linear-gradient(90deg,#314d91,#6152a2);color:#fff}
-  #accountName{color:#8ef6a0;font-weight:bold}
-  #leaderboard{margin:8px auto 0;width:100%;border-collapse:collapse;font-size:10px;color:#dfe6ff}
-  #leaderboard th{color:#8ef6ff;font-weight:normal;letter-spacing:.7px;border-bottom:1px solid rgba(115,223,255,.25);padding:3px}
-  #leaderboard td{padding:3px 4px;border-bottom:1px solid rgba(130,150,230,.1)}
-  #leaderboard td:first-child{color:#ffd166;width:24px}#leaderboard td:last-child{text-align:right;color:#ffd58a}
-  #onlineStatus{min-height:14px;margin:5px 0 0;color:#96a8da;font-size:10px}
+  #menuNotice{min-height:15px;margin:4px 0 0;color:#8ef6ff;font-size:11px}
+  #menuKeys{color:#9fe8c0;font-size:12px}
+  #scoresPanel{width:min(430px,94%);margin:13px auto 0;padding:10px 12px;border-radius:12px;
+    background:linear-gradient(120deg,rgba(10,24,55,.78),rgba(32,13,54,.68));border:1px solid rgba(115,223,255,.28)}
+  #scoresTitle{margin:0 0 6px;font-size:11px;letter-spacing:2px;color:#8ef6ff;font-weight:normal}
+  #scoresTable{width:100%;border-collapse:collapse;font-size:10px;color:#dfe6ff}
+  #scoresTable th{color:#8ef6ff;font-weight:normal;letter-spacing:.7px;border-bottom:1px solid rgba(115,223,255,.25);padding:3px}
+  #scoresTable td{padding:3px 4px;border-bottom:1px solid rgba(130,150,230,.1)}
+  #scoresTable td:first-child{color:#ffd166;width:20px}
+  #scoresTable td:nth-child(2){color:#ffd58a;text-align:right}
+  #scoresTable tr.top td{color:#fff0c7;font-weight:bold}
+  #scoresHint{margin:6px 0 0;color:#96a8da;font-size:10px}
+  #pauseInfo{color:#c8b6ff;font-size:13px}
   #continueBtn{background:linear-gradient(90deg,#8ef6a0,#7bdff2);color:#07152a}
-  #loginGate{z-index:30;background:radial-gradient(circle at 50% 18%,rgba(29,74,145,.45),rgba(3,4,12,.96) 56%)}
-  #loginGate p{max-width:330px}
-  #loginGate button{margin-top:22px}
   .hidden{display:none!important}
   #toast{position:absolute;top:34%;left:0;right:0;text-align:center;font-size:calc(24px * var(--s));font-weight:bold;
     color:#ffd166;text-shadow:0 0 20px #ff6b00;pointer-events:none;opacity:0;letter-spacing:3px}
@@ -168,6 +169,7 @@
     <p style="color:#8ec5ff">Souris : déplace le curseur · maintiens le clic gauche pour tirer<br>
        clic droit : cycle des 5 armes · clic molette : bombe</p>
     <p style="color:#8ef6a0">Mobile : glisse le doigt (tir auto), boutons : bombe, impulsion, Surcharge Aube, arme.</p>
+    <p id="menuKeys"><kbd>Entrée</kbd> lance la partie · <kbd>Échap</kbd> ou <kbd>P</kbd> met en pause · <kbd>M</kbd> coupe le son</p>
     <div class="opts">
       <label><input type="checkbox" id="optFlash"> Réduire les flashs et secousses</label>
       <label><input type="checkbox" id="optMute"> Couper le son</label>
@@ -181,19 +183,16 @@
       <button id="exportBtn" type="button">↓ SAUVEGARDER LE PROFIL</button>
       <label class="fileButton">↑ RESTAURER<input id="importSave" type="file" accept="application/json,.json"></label>
     </div>
-    <p id="saveStatus">Astuce : place le fichier de sauvegarde dans Google Drive, iCloud ou Dropbox.</p>
-    <section id="accountPanel" aria-label="Compte et classement">
-      <div id="accountTop"><span id="accountName">Mode invité</span><button id="googleSignIn" type="button">SE CONNECTER AVEC GOOGLE</button><button id="googleSignOut" class="hidden" type="button">DÉCONNEXION</button></div>
-      <p id="onlineStatus" aria-live="polite">Chargement du classement…</p>
-      <table id="leaderboard" aria-label="Classement mondial"><thead><tr><th>#</th><th>PILOTE</th><th>PROGRESSION</th><th>SCORE</th></tr></thead><tbody id="leaderboardRows"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
+    <p id="saveStatus">Astuce : exporte ton profil pour le conserver ou le transférer.</p>
+    <p id="menuNotice" aria-live="polite"></p>
+    <section id="scoresPanel" aria-label="Meilleurs scores locaux">
+      <h3 id="scoresTitle">MEILLEURS SCORES</h3>
+      <table id="scoresTable">
+        <thead><tr><th>#</th><th>SCORE</th><th>SECTEUR</th><th>NIVEAU</th><th>DATE</th></tr></thead>
+        <tbody id="scoresRows"></tbody>
+      </table>
+      <p id="scoresHint">Classement conservé sur cet appareil · inclus dans l'export du profil.</p>
     </section>
-  </div>
-
-  <div class="overlay" id="loginGate" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-    <h1 id="loginTitle">COSMO CHAT</h1><h2>IDENTIFICATION DU PILOTE</h2>
-    <p>Connecte-toi avec Google pour lancer la campagne. Ton avancée et ton meilleur score seront liés à ton compte.</p>
-    <button id="gateGoogleSignIn" type="button">CONTINUER AVEC GOOGLE</button>
-    <p id="gateStatus" aria-live="polite">Connexion sécurisée requise.</p>
   </div>
 
   <div class="overlay hidden" id="pauseScr">
@@ -205,6 +204,7 @@
       <label>Niveau <select id="optDifficulty2"><option value="cadet">Cadet · découverte</option><option value="normal">Pilote · équilibré</option><option value="veteran">Vétéran · exigeant</option></select></label>
       <label>Volume <input type="range" id="optVol2" min="0" max="100" value="72"></label>
     </div>
+    <p id="pauseInfo" aria-live="polite"></p>
     <button id="resumeBtn">REPRENDRE</button>
     <p style="margin-top:10px"><kbd>P</kbd> pour reprendre · <kbd>R</kbd> pour recommencer</p>
   </div>
@@ -464,124 +464,16 @@ const Store={
   set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
   del(k){try{localStorage.removeItem(k);}catch(e){}}
 };
-/* Compte et progression en ligne. La clé publishable reste publique ; RLS protège les lignes privées. */
-const Cloud={
-  client:null,user:null,ready:false,initializing:false,signingIn:false,subscription:null,queue:Promise.resolve(),
-  status(message){$('onlineStatus').textContent=message;},
-  authStatus(message){this.status(message);$('gateStatus').textContent=message;},
-  authButtons(disabled){$('googleSignIn').disabled=disabled;$('gateGoogleSignIn').disabled=disabled;},
-  profileName(user){const m=user?.user_metadata||{};return String(m.full_name||m.name||user?.email?.split('@')[0]||'Pilote').slice(0,48);},
-  async init(){
-    if(this.initializing)return;
-    this.initializing=true;this.ready=false;this.authButtons(true);
-    this.authStatus('Préparation de la connexion Google…');
-    try{
-      if(!this.client){
-        const response=await fetch('/api/game-config',{cache:'no-store',signal:AbortSignal.timeout(15000)});
-        if(!response.ok)throw new Error(response.status===503?'Connexion non configurée : les variables Supabase doivent être renseignées sur le serveur.':'Configuration de connexion inaccessible. Vérifie le déploiement de /api/game-config.');
-        let config;
-        try{config=await response.json();}catch(e){throw new Error('Configuration de connexion invalide. Vérifie le déploiement de /api/game-config.');}
-        if(!config.url||!config.key)throw new Error('Configuration Supabase incomplète.');
-        if(!window.supabase){
-          await new Promise((resolve,reject)=>{
-            const script=document.createElement('script');
-            const timer=setTimeout(()=>fail(),15000);
-            function fail(){clearTimeout(timer);script.remove();reject(new Error('Chargement du service de connexion impossible. Vérifie ta connexion réseau puis réessaie.'));}
-            script.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-            script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=fail;
-            document.head.appendChild(script);
-          });
-        }
-        this.client=window.supabase.createClient(config.url,config.key);
-      }
-      const {data,error}=await this.client.auth.getSession();
-      if(error)throw error;
-      this.setUser(data.session?.user||null);
-      if(!this.subscription){
-        const {data:listener}=this.client.auth.onAuthStateChange((_event,session)=>{
-          this.setUser(session?.user||null);
-          // Supabase holds its auth lock during this callback. Database calls must run later.
-          if(session?.user)setTimeout(()=>this.syncAccount().catch(()=>this.status('Compte connecté, mais synchronisation indisponible.')),0);
-        });
-        this.subscription=listener.subscription;
-      }
-      this.ready=true;
-      const params=new URLSearchParams(location.search),fragment=new URLSearchParams(location.hash.slice(1));
-      const oauthError=params.get('error_description')||fragment.get('error_description')||params.get('error')||fragment.get('error');
-      this.authStatus(oauthError?'Connexion Google refusée : '+oauthError:(this.user?'Compte connecté.':'Connecte-toi pour sauvegarder ta campagne.'));
-      if(oauthError){
-        ['error','error_code','error_description'].forEach(key=>params.delete(key));
-        const query=params.toString();history.replaceState(null,'',location.pathname+(query?'?'+query:'')+(fragment.has('error')?'':location.hash));
-      }
-      this.refreshBoard().catch(()=>this.status('Classement momentanément indisponible.'));
-      if(this.user)this.syncAccount().catch(()=>this.status('Compte connecté, mais synchronisation indisponible.'));
-    }catch(e){
-      this.authStatus(e.message||'Connexion indisponible. Réessaie dans un instant.');
-      $('leaderboardRows').innerHTML='<tr><td colspan="4">Classement indisponible.</td></tr>';
-    }finally{
-      this.initializing=false;this.authButtons(false);
-      $('googleSignIn').textContent=this.ready?'SE CONNECTER AVEC GOOGLE':'RÉESSAYER LA CONNEXION';
-      $('gateGoogleSignIn').textContent=this.ready?'CONTINUER AVEC GOOGLE':'RÉESSAYER LA CONNEXION';
+/* Sauvegarde locale uniquement : le jeu se lance sans compte ni connexion.
+   Les jetons laissés par d'anciennes sessions en ligne sont purgés au démarrage. */
+(function purgeLegacySessions(){
+  try{
+    for(let i=localStorage.length-1;i>=0;i--){
+      const key=localStorage.key(i);
+      if(key&&/^sb-.*auth-token/.test(key))localStorage.removeItem(key);
     }
-  },
-  setUser(user){
-    this.user=user;$('accountName').textContent=user?this.profileName(user):'Mode invité';
-    $('googleSignIn').classList.toggle('hidden',!!user);$('googleSignOut').classList.toggle('hidden',!user);
-    $('loginGate').classList.toggle('hidden',!!user);
-    $('gateStatus').textContent=user?'Pilote identifié. Ouverture de la mission…':'Connecte-toi pour lancer la campagne.';
-  },
-  async signIn(){
-    if(this.signingIn||this.initializing)return;
-    if(!this.ready)await this.init();
-    if(!this.ready)return;
-    this.signingIn=true;this.authButtons(true);this.authStatus('Redirection vers Google…');
-    try{
-      // Use a stable callback URL, also when the game was opened at /jeu.
-      const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/shootemup.html'}});
-      if(error)throw error;
-    }catch(e){this.authStatus('Connexion Google impossible : '+(e.message||'réessaie dans un instant.'));}
-    finally{this.signingIn=false;this.authButtons(false);}
-  },
-  async signOut(){
-    try{if(this.client){const {error}=await this.client.auth.signOut();if(error)throw error;}}
-    catch(e){this.authStatus('Déconnexion impossible. Réessaie.');}
-  },
-  async refreshBoard(){
-    if(!this.client)return;
-    const {data,error}=await this.client.from('cosmo_player_stats').select('display_name,furthest_sector,furthest_wave,best_score').order('furthest_wave',{ascending:false}).order('best_score',{ascending:false}).limit(10);
-    const body=$('leaderboardRows');body.replaceChildren();
-    if(error||!data){body.innerHTML='<tr><td colspan="4">Classement momentanément indisponible.</td></tr>';return;}
-    if(!data.length){body.innerHTML='<tr><td colspan="4">Les pilotes apparaîtront ici.</td></tr>';return;}
-    data.forEach((row,i)=>{const tr=document.createElement('tr');[String(i+1),row.display_name||'Pilote',`Secteur ${String(row.furthest_sector).padStart(2,'0')} · vague ${row.furthest_wave}`,Number(row.best_score||0).toLocaleString('fr-FR')].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.appendChild(td);});body.appendChild(tr);});
-  },
-  async syncAccount(){
-    if(!this.client||!this.user)return;
-    const [saveResult,statsResult]=await Promise.all([
-      this.client.from('cosmo_player_saves').select('save_data').eq('user_id',this.user.id).maybeSingle(),
-      this.client.from('cosmo_player_stats').select('best_score').eq('user_id',this.user.id).maybeSingle()
-    ]);
-    const remote=saveResult.data?.save_data,local=getCheckpoint();
-    if(remote?.checkpoint&&(!local||remote.checkpoint.wave>local.wave)){Store.set('cosmochat_checkpoint',JSON.stringify(remote.checkpoint));refreshContinueButton();}
-    best=Math.max(best||0,+statsResult.data?.best_score||0,+remote?.best_score||0);Store.set('cosmochat_best',best);$('best').textContent='RECORD '+best;
-    if(local)this.saveCheckpoint(local);
-    await this.recordProgress(waveIdx+1,score);
-    this.status('Progression synchronisée avec Google.');
-  },
-  async recordProgress(wave,points){
-    if(!this.client||!this.user)return;
-    const zone=chapterAt(Math.max(0,Math.min(CAMPAIGN.length*BOSS_EVERY-1,wave-1)));
-    const payload={user_id:this.user.id,display_name:this.profileName(this.user),furthest_sector:zone.index+1,furthest_wave:Math.max(1,wave),best_score:Math.max(best||0,points||0),updated_at:new Date().toISOString()};
-    const {error}=await this.client.from('cosmo_player_stats').upsert(payload,{onConflict:'user_id'});
-    if(!error)this.refreshBoard();
-  },
-  saveCheckpoint(checkpoint){
-    if(!this.client||!this.user)return;
-    const payload={user_id:this.user.id,save_data:{checkpoint,best_score:Math.max(best||0,checkpoint.score||0)},updated_at:new Date().toISOString()};
-    this.queue=this.queue.then(()=>this.client.from('cosmo_player_saves').upsert(payload,{onConflict:'user_id'})).then(({error})=>{if(error)this.status('Sauvegarde en ligne à réessayer.');else this.status('Campagne sauvegardée sur ton compte Google.');}).catch(()=>{});
-  }
-};
-$('googleSignIn').addEventListener('click',()=>Cloud.signIn());$('gateGoogleSignIn').addEventListener('click',()=>Cloud.signIn());$('googleSignOut').addEventListener('click',()=>Cloud.signOut());
-Cloud.init();
+  }catch(e){}
+})();
 // Le mode fluide peut être choisi manuellement ou activé après plusieurs images lentes.
 function lowFx(){return reduceFx||fluidMode||autoLite;}
 function applyStoredSettings(){
@@ -792,7 +684,6 @@ function advanceWave(next,fromJump=false){
   const oldSector=chapterAt(waveIdx).index;
   if(waveIdx>0)score+=500+waveIdx*100;
   waveIdx=next;waveT=0;phaseQ=makeWave(waveIdx);
-  Cloud.recordProgress(waveIdx+1,score);
   const z=chapterAt(waveIdx), nu=UNLOCK.find(u=>u.w===waveIdx);
   if(z.index!==oldSector){
     // Cette branche ne se produit qu'après le boss : la nouvelle carte arrive
@@ -1043,13 +934,13 @@ function reset(){
 /* ======================== PROFIL & SAUVEGARDE PORTABLE ========================
    Sans compte ni serveur : le JSON peut être placé dans n'importe quel cloud personnel.
    Il contient les réglages, le record et le dernier checkpoint de secteur. */
-const PROFILE_KEYS=['cosmochat_best','cosmochat_fx','cosmochat_mute','cosmochat_fluid','cosmochat_volume','cosmochat_difficulty','cosmochat_checkpoint'];
+const PROFILE_KEYS=['cosmochat_best','cosmochat_fx','cosmochat_mute','cosmochat_fluid','cosmochat_volume','cosmochat_difficulty','cosmochat_checkpoint','cosmochat_scores'];
 function checkpoint(){
   const next=waveIdx+1;
   if(next>=CAMPAIGN.length*BOSS_EVERY)return;
   // Reprise au début du secteur suivant : aucun ennemi ni projectile ne peut être perdu/corrompu.
   const data={v:1,wave:next,score:score+500+waveIdx*100,lives,bombs,weapon:P.w,level:P.lv,focus,at:Date.now()};
-  Store.set('cosmochat_checkpoint',JSON.stringify(data));refreshContinueButton();Cloud.saveCheckpoint(data);
+  Store.set('cosmochat_checkpoint',JSON.stringify(data));refreshContinueButton();
 }
 function getCheckpoint(){
   try{
@@ -1058,11 +949,57 @@ function getCheckpoint(){
     return c;
   }catch(e){return null;}
 }
-function clearCheckpoint(){Store.del('cosmochat_checkpoint');refreshContinueButton();if(Cloud.client&&Cloud.user)Cloud.client.from('cosmo_player_saves').delete().eq('user_id',Cloud.user.id);}
+function clearCheckpoint(){Store.del('cosmochat_checkpoint');refreshContinueButton();}
 function refreshContinueButton(){
   const b=$('continueBtn'),c=getCheckpoint();
   b.classList.toggle('hidden',!c);
   if(c)b.textContent='REPRENDRE · '+chapterAt(c.wave).sector;
+}
+/* Meilleurs scores locaux : le classement en ligne a disparu avec la connexion,
+   ce tableau garde la trace des cinq meilleures parties sur cet appareil. */
+const SCORES_MAX=5;
+function loadScores(){
+  try{
+    const list=JSON.parse(Store.get('cosmochat_scores','[]'));
+    if(!Array.isArray(list))return [];
+    return list.filter(s=>s&&Number.isFinite(+s.score))
+      .sort((a,b)=>(+b.score||0)-(+a.score||0)||(+b.wave||0)-(+a.wave||0))
+      .slice(0,SCORES_MAX);
+  }catch(e){return [];}
+}
+function refreshScores(){
+  const body=$('scoresRows');if(!body)return;
+  const list=loadScores();
+  if(!list.length){
+    body.innerHTML='<tr><td colspan="5">Aucune partie enregistrée pour l’instant.</td></tr>';
+    return;
+  }
+  body.replaceChildren();
+  list.forEach((entry,index)=>{
+    const date=new Date(+entry.at||0),valid=Number.isFinite(date.getTime());
+    const tr=document.createElement('tr');
+    if(index===0)tr.className='top';
+    [String(index+1),
+     Math.max(0,Math.round(+entry.score||0)).toLocaleString('fr-FR'),
+     entry.sector||'—',
+     entry.level||'—',
+     valid?date.getDate()+'/'+(date.getMonth()+1):'—'
+    ].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.appendChild(td);});
+    body.appendChild(tr);
+  });
+}
+function saveRunScore(){
+  const entry={score:Math.max(0,Math.round(+score||0)),wave:waveIdx+1,
+    sector:chapterAt(waveIdx).sector,
+    level:DIFFICULTY[difficulty].name+(eliteRun?' · ÉLITE':''),
+    at:Date.now()};
+  const list=loadScores();list.push(entry);
+  list.sort((a,b)=>(+b.score||0)-(+a.score||0)||(+b.wave||0)-(+a.wave||0));
+  const kept=list.slice(0,SCORES_MAX);
+  Store.set('cosmochat_scores',JSON.stringify(kept));
+  refreshScores();
+  const rank=kept.indexOf(entry);
+  return rank<0?0:rank+1;
 }
 function beginCheckpoint(){
   const c=getCheckpoint();if(!c){start();return;}
@@ -1081,7 +1018,7 @@ function exportProfile(){
   try{
     const blob=new Blob([JSON.stringify(profilePayload(),null,2)],{type:'application/json'}),a=document.createElement('a');
     a.href=URL.createObjectURL(blob);a.download='cosmo-chat-sauvegarde.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);
-    $('saveStatus').textContent='Sauvegarde téléchargée. Place-la dans Google Drive, iCloud ou Dropbox.';
+    $('saveStatus').textContent='Sauvegarde téléchargée. Conserve ce fichier pour la restaurer plus tard.';
   }catch(e){$('saveStatus').textContent='Impossible de créer le fichier de sauvegarde sur cet appareil.';}
 }
 function importProfile(file){
@@ -1091,7 +1028,7 @@ function importProfile(file){
     const data=JSON.parse(reader.result);
     if(!data||data.app!=='COSMO_CHAT'||!data.profile||typeof data.profile!=='object')throw Error('format');
     PROFILE_KEYS.forEach(k=>{if(typeof data.profile[k]==='string')Store.set(k,data.profile[k]);});
-    applyStoredSettings();refreshContinueButton();$('saveStatus').textContent='Sauvegarde restaurée. Tu peux reprendre la campagne.';
+    applyStoredSettings();refreshContinueButton();refreshScores();$('saveStatus').textContent='Sauvegarde restaurée. Tu peux reprendre la campagne.';
   }catch(e){$('saveStatus').textContent='Ce fichier n’est pas une sauvegarde Cosmo Chat valide.';}};
   reader.onerror=()=>{$('saveStatus').textContent='Lecture du fichier impossible.';};reader.readAsText(file);
 }
@@ -1101,6 +1038,11 @@ const keys={};
 addEventListener('keydown',e=>{
   keys[e.code]=true; Audio_.init();
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyX','KeyC','KeyF','KeyE'].includes(e.code))e.preventDefault();
+  // Un bouton déjà focalisé répond nativement : on ne double pas l'action.
+  const onForm=!!(e.target&&e.target.closest&&e.target.closest('button,input,select,label,textarea'));
+  if(e.code==='KeyM')toggleMute();
+  if(e.code==='Escape'&&!onForm){ if(state==='play')pause(); else if(state==='pause')resume(); }
+  if((e.code==='Enter'||e.code==='NumpadEnter')&&!onForm&&primaryAction())e.preventDefault();
   if(e.code==='KeyP'){ if(state==='play')pause(); else if(state==='pause')resume(); }
   if(e.code==='KeyR'&&state==='pause')start();
   if(e.code==='KeyC'&&state==='play')swapWeapon();
@@ -1216,8 +1158,33 @@ function startElite(){
   toast('MODE ÉLITE · SECTEUR INFINI');
   $('menu').classList.add('hidden');$('over').classList.add('hidden');$('victory').classList.add('hidden');$('pauseScr').classList.add('hidden');last=performance.now();
 }
-function pause(){state='pause';$('pauseScr').classList.remove('hidden');}
+function pause(){
+  state='pause';
+  const z=chapterAt(waveIdx);
+  $('pauseInfo').innerHTML=`Score <b style="color:#ffd166">${score.toLocaleString('fr-FR')}</b> · ${z.sector} · vague <b>${waveIdx+1}</b>`+
+    ` · ${WEAPONS[P.w].name}${eliteRun?' · ÉLITE':''}`;
+  $('pauseScr').classList.remove('hidden');
+}
 function resume(){state='play';$('pauseScr').classList.add('hidden');last=performance.now();}
+/* Entrée : l'action la plus probable selon l'écran affiché (le menu n'a plus de compte à demander). */
+function primaryAction(){
+  if(state==='menu'){Audio_.init();getCheckpoint()?beginCheckpoint():start();return true;}
+  if(state==='pause'){resume();return true;}
+  if(state==='over'){Audio_.init();clearCheckpoint();start();return true;}
+  if(state==='victory'){Audio_.init();start();return true;}
+  return false;
+}
+/* Retour immédiat : le menu est joué sans boucle de rendu, donc sans toast. */
+function notify(message){
+  if(state==='menu'){const el=$('menuNotice');if(el)el.textContent=message;}
+  else toast(message);
+}
+function toggleMute(){
+  Audio_.muted=!Audio_.muted;
+  Store.set('cosmochat_mute',Audio_.muted?'1':'0');
+  $('optMute').checked=$('optMute2').checked=Audio_.muted;
+  notify(Audio_.muted?'SON COUPÉ · M pour rétablir':'SON RÉTABLI');
+}
 
 function selectWeapon(i){
   i=clamp(i,0,WEAPONS.length-1);if(i===P.w)return;
@@ -1595,7 +1562,7 @@ function showVictory(){
   if(state!=='play')return;
   state='victory';
   if(score>best){best=score;Store.set('cosmochat_best',best);}
-  Cloud.recordProgress(waveIdx+1,score);
+  saveRunScore();
   $('victoryText').innerHTML=`Score final : <b style="color:#ffd166">${score}</b><br>${missionReport()}<br><br>
     La campagne est terminée. Le mode Élite reprend au Secteur infini avec Pacha niveau 3.`;
   $('victory').classList.remove('hidden');
@@ -1604,10 +1571,10 @@ function gameOver(){
   state='over';
   const recordRun=score>best&&best>0;
   if(score>best){best=score;Store.set('cosmochat_best',best);}
-  Cloud.recordProgress(waveIdx+1,score);
+  const rank=saveRunScore();
   const z=chapterAt(waveIdx);
   $('overTitle').textContent=z.index>=CAMPAIGN.length-1?'DERNIER REMPART · COQUE PERDUE':'CHASSEUR DÉTRUIT';
-  $('overText').innerHTML=`Score : <b style="color:#ffd166">${score}</b> — Vague ${waveIdx+1}${recordRun?' · <b style="color:#8ef6a0">NOUVEAU RECORD</b>':''}<br>
+  $('overText').innerHTML=`Score : <b style="color:#ffd166">${score}</b> — Vague ${waveIdx+1}${recordRun?' · <b style="color:#8ef6a0">NOUVEAU RECORD</b>':''}${rank>1?' · <b style="color:#8ef6ff">TOP '+rank+'</b>':''}<br>
     Secteur atteint : <b style="color:#8ef6ff">${z.sector}</b><br>${missionReport()}<br>Record : ${best}`;
   $('over').classList.remove('hidden');
 }
@@ -2596,7 +2563,7 @@ function loop(now){
   }
   if(state!=='menu'){ render(); hud(); }
 }
-reset();refreshContinueButton();requestAnimationFrame(loop);
+reset();refreshContinueButton();refreshScores();requestAnimationFrame(loop);
 </script>
 </body>
 </html>
